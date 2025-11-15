@@ -1,0 +1,5 @@
+{
+  "name": "WWSM_UGT - Retail & Export Management",
+  "description": "A web-based, multi-user system to manage a retail network consisting of a central Head Office (Exporter) and multiple independent overseas Retail Shops. The system provides centralized oversight for the Head Office while enabling decentralized operations for each shop with segregated accounting.",
+  "requestFramePermissions": []
+}
