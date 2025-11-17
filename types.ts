@@ -131,6 +131,7 @@ export interface Transaction {
   id:string;
   shopId: string;
   invoiceId?: string;
+  receiptNumber?: string;
   productId?: string;
   type: TransactionType;
   description: string;

@@ -130,6 +130,7 @@ interface AppContextType {
   receiveShipment: (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[], locationId: string }) => void;
   currencies: Currency[];
   updateCurrency: (currency: Pick<Currency, 'id' | 'rate'>) => void;
+  addCurrency: (currency: Currency) => Promise<void>;
   currentShopCurrency: Currency;
   formatCurrency: (amountInBase: number) => string;
   shopAccounts: ShopAccount[];
@@ -309,7 +310,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const batch = writeBatch(db);
             initialCurrencies.forEach(currency => {
                 const docRef = doc(db, "currencies", currency.id);
-                batch.set(docRef, currency);
+                // Storing the full object including ID for simplicity, though redundant
+                batch.set(docRef, { name: currency.name, symbol: currency.symbol, rate: currency.rate });
             });
             batch.commit();
             setCurrencies(initialCurrencies);
@@ -477,9 +479,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const recordAdvance = async (payload: RecordAdvancePayload) => {
     const convertedAmount = convertToUSD(payload.amount);
     const customer = customers.find(c => c.id === payload.customerId);
+    const receiptNumber = `adv-${Date.now()}`;
     await addDoc(collection(db, 'transactions'), {
         shopId: payload.shopId,
         customerId: payload.customerId,
+        receiptNumber,
         type: TransactionType.CUSTOMER_ADVANCE,
         description: `Advance payment from ${customer?.name || 'customer'}`,
         amount: convertedAmount,
@@ -774,6 +778,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await updateDoc(currencyRef, { rate: currency.rate });
   };
   
+  const addCurrency = async (currency: Currency) => {
+    if (!currency.id || currency.id.trim().length !== 3) {
+      throw new Error("Currency code must be 3 characters long.");
+    }
+    const upperCaseId = currency.id.trim().toUpperCase();
+
+    const exists = currencies.some(c => c.id.toUpperCase() === upperCaseId);
+    if (exists) {
+        throw new Error(`Currency with code ${upperCaseId} already exists.`);
+    }
+
+    const currencyRef = doc(db, 'currencies', upperCaseId);
+    await setDoc(currencyRef, {
+      name: currency.name,
+      symbol: currency.symbol,
+      rate: currency.rate
+    });
+  };
+
   const addShopAccount = async (account: Omit<ShopAccount, 'id' | 'openingBalance'> & { openingBalance: number }) => {
     const convertedBalance = convertToUSD(account.openingBalance);
     
@@ -873,7 +896,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, customers, addCustomer,
     clearingAgents, addClearingAgent, freightForwarders, addFreightForwarder,
     customExpenseTypes, addCustomExpenseType, expenseAccounts, addExpenseAccount,
-    shipments, receiveShipment, currencies, updateCurrency, currentShopCurrency, formatCurrency,
+    shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
     shopAccounts, addShopAccount, getStockLevel, alerts, logAlert,
     warehouses, addWarehouse, transferStock, assets, addAsset,
     recordAdvance, getAdvanceBalance,

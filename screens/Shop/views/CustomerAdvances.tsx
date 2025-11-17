@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { AdvanceItem, ShipmentStatus, TransactionType } from '../../../types';
+import { AdvanceItem, ShipmentStatus, Transaction, TransactionType } from '../../../types';
 
 const CustomerAdvances: React.FC = () => {
     const { shopId, customers, products, recordAdvance, shopAccounts, getAdvanceBalance, formatCurrency, currentShopCurrency, shipments, transactions } = useAppContext();
@@ -10,6 +10,7 @@ const CustomerAdvances: React.FC = () => {
     const [paymentAccountId, setPaymentAccountId] = useState('');
     const [items, setItems] = useState<AdvanceItem[]>([{ productId: '', quantity: 1 }]);
     const [successMessage, setSuccessMessage] = useState('');
+    const [viewingAdvance, setViewingAdvance] = useState<Transaction | null>(null);
     
     const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
     const currentShopAccounts = useMemo(() => shopAccounts.filter(acc => acc.shopId === shopId), [shopAccounts, shopId]);
@@ -55,6 +56,12 @@ const CustomerAdvances: React.FC = () => {
          .sort((a,b) => b.advanceBalance - a.advanceBalance);
 
     }, [shopCustomers, getAdvanceBalance, transactions, products, shopId]);
+
+    const advanceTransactions = useMemo(() => {
+        return transactions
+            .filter(t => t.shopId === shopId && t.type === TransactionType.CUSTOMER_ADVANCE)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    }, [transactions, shopId]);
 
 
     const handleItemChange = (index: number, field: keyof AdvanceItem, value: string | number) => {
@@ -206,7 +213,96 @@ const CustomerAdvances: React.FC = () => {
                         </table>
                     </div>
                 </div>
+
+                <div className="lg:col-span-3 bg-white p-6 rounded-lg shadow-lg">
+                    <h3 className="text-xl font-semibold mb-4 text-gray-800">Advance Payment History</h3>
+                    <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Receipt #</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {advanceTransactions.map(t => {
+                                    const customer = customers.find(c => c.id === t.customerId);
+                                    return (
+                                        <tr key={t.id}>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">{t.receiptNumber}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(t.date).toLocaleDateString()}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{customer?.name || 'N/A'}</td>
+                                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
+                                                <button onClick={() => setViewingAdvance(t)} className="font-semibold text-primary hover:text-primary-dark underline">
+                                                    {formatCurrency(t.amount)}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {advanceTransactions.length === 0 && (
+                                    <tr>
+                                        <td colSpan={4} className="text-center py-10 text-gray-500">No advance payments have been recorded yet.</td>
+                                    </tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
+
+            {viewingAdvance && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+                        <div className="p-6 border-b border-gray-200">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-800">Advance Receipt Details</h3>
+                                    <p className="text-sm text-gray-500 font-mono">{viewingAdvance.receiptNumber}</p>
+                                </div>
+                                <button onClick={() => setViewingAdvance(null)} className="text-gray-400 hover:text-gray-600 font-bold text-2xl">&times;</button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-sm">
+                           <div className="grid grid-cols-3 gap-4">
+                               <div className="col-span-1 text-gray-500">Customer</div>
+                               <div className="col-span-2 font-medium text-gray-800">{customers.find(c => c.id === viewingAdvance.customerId)?.name}</div>
+                           </div>
+                           <div className="grid grid-cols-3 gap-4">
+                               <div className="col-span-1 text-gray-500">Date</div>
+                               <div className="col-span-2 font-medium text-gray-800">{new Date(viewingAdvance.date).toLocaleString()}</div>
+                           </div>
+                           <div className="grid grid-cols-3 gap-4">
+                               <div className="col-span-1 text-gray-500">Amount Paid</div>
+                               <div className="col-span-2 font-bold text-lg text-green-600">{formatCurrency(viewingAdvance.amount)}</div>
+                           </div>
+                           <div className="grid grid-cols-3 gap-4">
+                               <div className="col-span-1 text-gray-500">Paid To</div>
+                               <div className="col-span-2 font-medium text-gray-800">{shopAccounts.find(a => a.id === viewingAdvance.paymentAccountId)?.accountName}</div>
+                           </div>
+                           <div className="border-t pt-4">
+                               <h4 className="font-medium text-gray-700 mb-2">Pre-ordered Items</h4>
+                               {viewingAdvance.advanceForItems && viewingAdvance.advanceForItems.length > 0 ? (
+                                   <ul className="list-disc list-inside space-y-1">
+                                       {viewingAdvance.advanceForItems.map((item, index) => (
+                                           <li key={index} className="text-gray-800">
+                                               <span className="font-semibold">{item.quantity}x</span> {products.find(p => p.id === item.productId)?.name || 'Unknown Item'}
+                                           </li>
+                                       ))}
+                                   </ul>
+                               ) : (
+                                   <p className="text-gray-500">No specific items were linked to this advance.</p>
+                               )}
+                           </div>
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end">
+                            <button onClick={() => setViewingAdvance(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { Shop } from '../../../types';
@@ -198,11 +199,11 @@ const ShopManagement: React.FC = () => {
             )}
           </div>
            <div>
-            <label htmlFor="surroundingsPictures" className="block text-sm font-medium text-gray-700">Surroundings Pictures</label>
+            <label htmlFor="surroundingsPictures" className="block text-sm font-medium text-gray-700">Location Pictures</label>
             <input type="file" id="surroundingsPictures" onChange={handleSurroundingsImagesChange} className={`mt-1 ${fileInputStyle}`} multiple accept="image/*" />
             {surroundingsImagePreviews.length > 0 && (
               <div className={imagePreviewContainerStyle}>
-                {surroundingsImagePreviews.map((preview, index) => <img key={index} src={preview} alt="Surroundings preview" className={imagePreviewStyle} />)}
+                {surroundingsImagePreviews.map((preview, index) => <img key={index} src={preview} alt="Location preview" className={imagePreviewStyle} />)}
               </div>
             )}
           </div>
@@ -286,10 +287,10 @@ const ShopManagement: React.FC = () => {
                         )}
                         {editingShop.surroundingsImageUrls?.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-2">Surroundings Pictures</h4>
+                            <h4 className="text-sm font-medium text-gray-700 mb-2">Location Pictures</h4>
                             <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
                               {editingShop.surroundingsImageUrls.map((url, index) => (
-                                <img key={index} src={url} alt={`Surrounding ${index + 1}`} className="h-24 w-full object-cover rounded-md shadow" />
+                                <img key={index} src={url} alt={`Location ${index + 1}`} className="h-24 w-full object-cover rounded-md shadow" />
                               ))}
                             </div>
                           </div>
