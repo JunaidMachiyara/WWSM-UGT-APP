@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { db, storage } from '../firebase';
 import {
@@ -14,11 +15,11 @@ import {
   where,
   getDocs,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, listAll, deleteObject } from 'firebase/storage';
+import { ref, listAll, deleteObject } from 'firebase/storage';
 import { 
   UserRole, Shop, Product, User, Transaction, Customer, TransactionType,
   ClearingAgent, FreightForwarder, CustomExpenseType, ExpenseAccount,
-  Shipment, ShipmentStatus, Currency, ShopAccount, AccountType, Alert, AlertType, Warehouse, Asset, AssetStatus, AdvanceItem
+  Shipment, ShipmentStatus, Currency, ShopAccount, AccountType, Alert, AlertType, Warehouse, Asset, AdvanceItem, AssetStatus
 } from '../types';
 
 export interface ExportItem {
@@ -92,8 +93,7 @@ export interface RecordAdvancePayload {
 }
 
 export interface AddShopPayload extends Omit<Shop, 'id' | 'shopImageUrls' | 'surroundingsImageUrls'> {
-    shopImages: File[];
-    surroundingsImages: File[];
+    // Images removed as per request
 }
 
 
@@ -176,7 +176,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const querySnapshot = await getDocs(q);
   
         if (querySnapshot.empty) {
-          // No shops named "T" found, so the work is done.
           return;
         }
         
@@ -197,7 +196,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               } catch(e: any) {
                   if (e.code !== 'storage/object-not-found') {
                       console.error(`Error deleting storage folder ${path}:`, e);
-                      // Don't re-throw, allow Firestore deletion to proceed if possible
                   }
               }
             };
@@ -244,7 +242,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    // Special handlers for collections with Timestamps
     const qTransactions = query(collection(db, "transactions"));
     const unsubTransactions = onSnapshot(qTransactions, (querySnapshot) => {
         const data = querySnapshot.docs.map(doc => {
@@ -300,7 +297,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const qCurrencies = query(collection(db, 'currencies'));
     const unsubCurrencies = onSnapshot(qCurrencies, (snapshot) => {
         if (snapshot.empty) {
-            // Seed data for demo purposes if collection is empty
             const initialCurrencies: Currency[] = [
                 { id: 'USD', name: 'US Dollar', symbol: '$', rate: 1 },
                 { id: 'UGX', name: 'Ugandan Shilling', symbol: 'UGX ', rate: 3850 },
@@ -310,7 +306,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const batch = writeBatch(db);
             initialCurrencies.forEach(currency => {
                 const docRef = doc(db, "currencies", currency.id);
-                // Storing the full object including ID for simplicity, though redundant
                 batch.set(docRef, { name: currency.name, symbol: currency.symbol, rate: currency.rate });
             });
             batch.commit();
@@ -339,7 +334,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 return currencies.find(c => c.id === currentShop.currencyCode) || defaultCurrency;
             }
         }
-        // For HO or if shop has no currency set, default to USD
         return currencies.find(c => c.id === 'USD') || defaultCurrency;
   }, [role, shopId, shops, currencies]);
 
@@ -362,35 +356,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
-
-  const uploadImages = async (files: File[], path: string): Promise<string[]> => {
-    const uploadPromises = files.map(async file => {
-      const imageRef = ref(storage, `${path}/${Date.now()}_${file.name}`);
-      await uploadBytes(imageRef, file);
-      const url = await getDownloadURL(imageRef);
-      return url;
-    });
-    return Promise.all(uploadPromises);
-  };
-  
   const addShop = async (shop: AddShopPayload) => {
-    const { shopImages, surroundingsImages, ...shopData } = shop;
-  
-    // 1. Create shop doc first to get an ID
+    // Simply create the shop document with empty image arrays.
+    // Image upload functionality has been removed as per requirement.
     const newShopData = {
-      ...shopData,
+      ...shop,
       shopImageUrls: [],
       surroundingsImageUrls: [],
     };
-    const docRef = await addDoc(collection(db, 'shops'), newShopData);
-    const shopId = docRef.id;
-  
-    // 2. Upload images to paths using the new shop ID
-    const shopImageUrls = await uploadImages(shopImages, `shops/${shopId}/shopImages`);
-    const surroundingsImageUrls = await uploadImages(surroundingsImages, `shops/${shopId}/surroundingsImages`);
-  
-    // 3. Update the shop doc with the image URLs
-    await updateDoc(docRef, { shopImageUrls, surroundingsImageUrls });
+    await addDoc(collection(db, 'shops'), newShopData);
   };
 
   const updateShop = async (shopId: string, data: Partial<Omit<Shop, 'id'>>) => {
@@ -402,7 +376,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (!shopId) return;
 
     try {
-        // Recursively delete all files in the shop's storage folder
         const deleteFolderContents = async (path: string) => {
             const folderRef = ref(storage, path);
             const res = await listAll(folderRef);
@@ -416,11 +389,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         
         await deleteFolderContents(`shops/${shopId}`);
 
-        // If storage deletion is successful, delete the Firestore doc
         await deleteDoc(doc(db, 'shops', shopId));
     } catch (error) {
         console.error("Failed to delete shop and its assets:", error);
-        // Re-throw the error so the UI can catch it and show a message
         throw error;
     }
   };
@@ -590,7 +561,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const returnDate = Timestamp.fromDate(payload.date);
     let totalReturnValue = 0;
 
-    // 1. Create SALES_RETURN transactions for each item
     payload.returnedItems.forEach(item => {
       if (item.quantity > 0) {
         const convertedSalePrice = convertToUSD(item.salePrice);
@@ -613,13 +583,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     });
 
-    // 2. If it's a cash refund, create an EXPENSE transaction
     if (payload.refundMethod === 'cash' && payload.paymentAccountId && totalReturnValue > 0) {
         const expenseRef = doc(collection(db, 'transactions'));
         batch.set(expenseRef, {
             shopId: payload.shopId,
             type: TransactionType.EXPENSE,
-            // We don't have a specific expense account for this, so description is key.
             expenseAccountId: 'CASH_REFUND', 
             description: `Cash refund for return on invoice #${payload.invoiceId}`,
             amount: totalReturnValue,
@@ -648,7 +616,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const batch = writeBatch(db);
     const now = Timestamp.now();
     
-    // 1. Create Shipment
     const shipmentRef = doc(collection(db, 'shipments'));
     const newShipment: Omit<Shipment, 'id' | 'date'> = {
       shopId: data.shopId,
@@ -668,7 +635,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         date: now,
     });
 
-    // 2. Record HO expenses
     const HEAD_OFFICE_ACCOUNT_ID = 'HO'; 
 
     if (data.freightForwarder.amount > 0 && data.freightForwarder.id) {
@@ -717,7 +683,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const batch = writeBatch(db);
     const now = Timestamp.now();
 
-    // 1. Create IMPORT transactions for the shop
     const totalOverheads = shipment.freightCost + shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty;
     const totalReceivedQuantity = payload.receivedItems.reduce((sum, item) => sum + item.quantity, 0);
     const averageOverheadPerItem = totalReceivedQuantity > 0 ? totalOverheads / totalReceivedQuantity : 0;
@@ -743,7 +708,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
     });
 
-    // 2. Update the shipment status and received quantities
     const shipmentRef = doc(db, 'shipments', payload.shipmentId);
     const updatedItems = shipment.items.map(item => ({
         ...item,
@@ -827,27 +791,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const fromLocationName = warehouses.find(w => w.id === payload.fromLocationId)?.name || shops.find(s => s.id === payload.fromLocationId)?.name || 'Unknown';
     const toLocationName = warehouses.find(w => w.id === payload.toLocationId)?.name || shops.find(s => s.id === payload.toLocationId)?.name || 'Unknown';
 
-    // Out transaction
     const outRef = doc(collection(db, 'transactions'));
     batch.set(outRef, {
         shopId: payload.shopId,
         productId: payload.productId,
         type: TransactionType.STOCK_TRANSFER_OUT,
         description: `Transfer to ${toLocationName}: ${payload.quantity} x ${product?.name || ''}`,
-        amount: 0, // No financial impact
+        amount: 0,
         quantity: payload.quantity,
         date: transferDate,
         locationId: payload.fromLocationId,
     });
 
-    // In transaction
     const inRef = doc(collection(db, 'transactions'));
     batch.set(inRef, {
         shopId: payload.shopId,
         productId: payload.productId,
         type: TransactionType.STOCK_TRANSFER_IN,
         description: `Transfer from ${fromLocationName}: ${payload.quantity} x ${product?.name || ''}`,
-        amount: 0, // No financial impact
+        amount: 0,
         quantity: payload.quantity,
         date: transferDate,
         locationId: payload.toLocationId,
@@ -861,7 +823,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     
     const convertedCost = convertToUSD(payload.purchaseCost);
 
-    // 1. Create the Asset document
     const assetRef = doc(collection(db, 'assets'));
     batch.set(assetRef, {
         shopId: payload.shopId,
@@ -874,7 +835,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         status: AssetStatus.ACTIVE,
     });
 
-    // 2. Create the corresponding Expense transaction
     const expenseRef = doc(collection(db, 'transactions'));
     const expenseAccount = expenseAccounts.find(ea => ea.id === payload.expenseAccountId);
     batch.set(expenseRef, {

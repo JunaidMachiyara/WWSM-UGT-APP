@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { Shop } from '../../../types';
 
@@ -12,10 +12,6 @@ const ShopManagement: React.FC = () => {
   const [district, setDistrict] = useState('');
   const [country, setCountry] = useState('');
   const [currencyCode, setCurrencyCode] = useState('USD');
-  const [shopImages, setShopImages] = useState<File[]>([]);
-  const [surroundingsImages, setSurroundingsImages] = useState<File[]>([]);
-  const [shopImagePreviews, setShopImagePreviews] = useState<string[]>([]);
-  const [surroundingsImagePreviews, setSurroundingsImagePreviews] = useState<string[]>([]);
   const [formMessage, setFormMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
   // State for editing an existing shop
@@ -24,44 +20,12 @@ const ShopManagement: React.FC = () => {
   const [updateMessage, setUpdateMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
 
 
-  useEffect(() => {
-    const objectUrls = shopImages.map(file => URL.createObjectURL(file));
-    setShopImagePreviews(objectUrls);
-    return () => objectUrls.forEach(url => URL.revokeObjectURL(url));
-  }, [shopImages]);
-
-  useEffect(() => {
-    const objectUrls = surroundingsImages.map(file => URL.createObjectURL(file));
-    setSurroundingsImagePreviews(objectUrls);
-    return () => objectUrls.forEach(url => URL.revokeObjectURL(url));
-  }, [surroundingsImages]);
-
-  const handleShopImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-          setShopImages(Array.from(e.target.files));
-      }
-  };
-
-  const handleSurroundingsImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-      if (e.target.files) {
-          setSurroundingsImages(Array.from(e.target.files));
-      }
-  };
-
   const resetForm = () => {
       setName('');
       setAddress('');
       setDistrict('');
       setCountry('');
       setCurrencyCode('USD');
-      setShopImages([]);
-      setSurroundingsImages([]);
-      setShopImagePreviews([]);
-      setSurroundingsImagePreviews([]);
-      const shopFileInput = document.getElementById('shopPictures') as HTMLInputElement;
-      if (shopFileInput) shopFileInput.value = '';
-      const surroundingsFileInput = document.getElementById('surroundingsPictures') as HTMLInputElement;
-      if (surroundingsFileInput) surroundingsFileInput.value = '';
   }
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -69,18 +33,20 @@ const ShopManagement: React.FC = () => {
     setFormMessage(null);
 
     if(!name || !address || !district || !country || !currencyCode) {
-      alert('Please fill out all required fields.');
+      setFormMessage({ type: 'error', text: 'Please fill out all required fields.' });
       return;
     };
 
-    const trimmedName = name.trim();
-    const isDuplicate = shops.some(shop => shop.name.toLowerCase() === trimmedName.toLowerCase());
-    if (isDuplicate) {
-        setFormMessage({ type: 'error', text: `A shop named "${trimmedName}" already exists.` });
-        return;
-    }
-    
     try {
+        const trimmedName = name.trim();
+        // Fix: Safely access shop.name and default to empty string if undefined to avoid "toLowerCase of undefined" error
+        const isDuplicate = shops.some(shop => (shop.name || '').toLowerCase() === trimmedName.toLowerCase());
+        
+        if (isDuplicate) {
+            setFormMessage({ type: 'error', text: `A shop named "${trimmedName}" already exists.` });
+            return;
+        }
+        
         await addShop({ 
             name: trimmedName, 
             address, 
@@ -88,14 +54,12 @@ const ShopManagement: React.FC = () => {
             country,
             isActive: true, 
             currencyCode,
-            shopImages,
-            surroundingsImages,
         });
         setFormMessage({ type: 'success', text: `Shop "${trimmedName}" created successfully!` });
         resetForm();
-    } catch (error) {
-        setFormMessage({ type: 'error', text: 'Failed to create shop. Please try again.' });
-        console.error(error);
+    } catch (error: any) {
+        console.error("Error creating shop:", error);
+        setFormMessage({ type: 'error', text: `Failed to create shop: ${error.message || 'Unknown error occurred'}.` });
     }
   };
 
@@ -139,7 +103,7 @@ const ShopManagement: React.FC = () => {
   };
 
   const handleDelete = async (shop: Shop) => {
-    if (window.confirm(`Are you sure you want to permanently delete "${shop.name}"? This will also delete all its images and cannot be undone.`)) {
+    if (window.confirm(`Are you sure you want to permanently delete "${shop.name}"? This will also delete all its data and cannot be undone.`)) {
         try {
             await deleteShop(shop.id);
         } catch (error) {
@@ -149,11 +113,6 @@ const ShopManagement: React.FC = () => {
     }
   };
   
-  const fileInputStyle = "block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-primary hover:file:bg-blue-100";
-  const imagePreviewContainerStyle = "mt-4 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-4";
-  const imagePreviewStyle = "h-24 w-full object-cover rounded-lg shadow-md";
-
-
   return (
     <>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -188,24 +147,6 @@ const ShopManagement: React.FC = () => {
                 <option key={currency.id} value={currency.id}>{currency.id} - {currency.name}</option>
               ))}
             </select>
-          </div>
-          <div>
-            <label htmlFor="shopPictures" className="block text-sm font-medium text-gray-700">Shop Pictures</label>
-            <input type="file" id="shopPictures" onChange={handleShopImagesChange} className={`mt-1 ${fileInputStyle}`} multiple accept="image/*" />
-             {shopImagePreviews.length > 0 && (
-              <div className={imagePreviewContainerStyle}>
-                {shopImagePreviews.map((preview, index) => <img key={index} src={preview} alt="Shop preview" className={imagePreviewStyle} />)}
-              </div>
-            )}
-          </div>
-           <div>
-            <label htmlFor="surroundingsPictures" className="block text-sm font-medium text-gray-700">Location Pictures</label>
-            <input type="file" id="surroundingsPictures" onChange={handleSurroundingsImagesChange} className={`mt-1 ${fileInputStyle}`} multiple accept="image/*" />
-            {surroundingsImagePreviews.length > 0 && (
-              <div className={imagePreviewContainerStyle}>
-                {surroundingsImagePreviews.map((preview, index) => <img key={index} src={preview} alt="Location preview" className={imagePreviewStyle} />)}
-              </div>
-            )}
           </div>
           <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg">Add Shop</button>
         </form>
@@ -272,32 +213,9 @@ const ShopManagement: React.FC = () => {
                     </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
-                    {/* Image Galleries */}
-                    {(editingShop.shopImageUrls?.length > 0 || editingShop.surroundingsImageUrls?.length > 0) && (
-                      <div className="space-y-4">
-                        {editingShop.shopImageUrls?.length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-2">Shop Pictures</h4>
-                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                              {editingShop.shopImageUrls.map((url, index) => (
-                                <img key={index} src={url} alt={`Shop ${index + 1}`} className="h-24 w-full object-cover rounded-md shadow" />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {editingShop.surroundingsImageUrls?.length > 0 && (
-                          <div>
-                            <h4 className="text-sm font-medium text-gray-700 mb-2">Location Pictures</h4>
-                            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                              {editingShop.surroundingsImageUrls.map((url, index) => (
-                                <img key={index} src={url} alt={`Location ${index + 1}`} className="h-24 w-full object-cover rounded-md shadow" />
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
                     
+                    {/* Image display logic removed as per request to remove image options */}
+
                     <form className="space-y-4">
                         <div>
                             <label htmlFor="editShopName" className="block text-sm font-medium text-gray-700">Shop Name</label>
