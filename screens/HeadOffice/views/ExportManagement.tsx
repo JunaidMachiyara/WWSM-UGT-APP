@@ -32,24 +32,51 @@ const ExportManagement: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
 
+  // Modal State
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [printDisabled, setPrintDisabled] = useState(false);
+
   const handleItemChange = (index: number, field: keyof ExportItemRow, value: string | number) => {
     const newItems = [...items];
     const item = newItems[index];
+    
     if (field === 'productId') {
-        item.productId = value as string;
+        const productId = value as string;
+        item.productId = productId;
+        
+        // Populate Landed Cost with Head Office Cost (Invoice Price)
+        const selectedProduct = products.find(p => p.id === productId);
+        if (selectedProduct) {
+            item.landedCost = selectedProduct.hoCost;
+        }
+    } else if (field === 'quantity') {
+        item.quantity = Number(value) < 0 ? 0 : Number(value);
+    } else if (field === 'landedCost') {
+        item.landedCost = Number(value);
     } else {
-        item[field] = Number(value) < 0 ? 0 : Number(value);
+        // @ts-ignore
+        item[field] = value;
     }
     setItems(newItems);
   };
   
+  const handleOverheadChange = (field: 'ff' | 'ca' | 'ce' | 'duty', value: number) => {
+      const val = Number(value) < 0 ? 0 : Number(value);
+      if (field === 'ff') setFfAmount(val);
+      else if (field === 'ca') setCaAmount(val);
+      else if (field === 'ce') setCeAmount(val);
+      else if (field === 'duty') setExpectedDuty(val);
+  };
+
   const addItemRow = () => {
-    setItems([...items, { productId: '', quantity: 1, landedCost: 0 }]);
+    const newItem = { productId: '', quantity: 1, landedCost: 0 };
+    setItems([...items, newItem]);
   };
 
   const removeItemRow = (index: number) => {
     if (items.length > 1) {
-      setItems(items.filter((_, i) => i !== index));
+      const newItems = items.filter((_, i) => i !== index);
+      setItems(newItems);
     }
   };
 
@@ -65,13 +92,24 @@ const ExportManagement: React.FC = () => {
     setExpectedDuty(0);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Validates form and opens the Invoice Modal
+  const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!shopId || items.some(item => !item.productId || item.quantity <= 0 || item.landedCost <= 0)) {
         alert('Please select a shop and fill all item details correctly (quantity and cost must be greater than zero).');
         return;
     }
+    setShowInvoice(true);
+    setPrintDisabled(false);
+  };
 
+  const handlePrint = () => {
+      window.print();
+      setPrintDisabled(true);
+  };
+
+  // Finalizes export after invoice review
+  const handleFinalSubmit = () => {
     addExport({
         shopId,
         items,
@@ -83,13 +121,28 @@ const ExportManagement: React.FC = () => {
     
     setSuccessMessage('Export recorded successfully!');
     resetForm();
+    setShowInvoice(false);
     setTimeout(() => setSuccessMessage(''), 5000);
   };
 
   const sortedShipments = [...shipments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  const totalInvoiceValue = items.reduce((sum, item) => sum + (item.quantity * item.landedCost), 0);
+  const totalOverheads = ffAmount + caAmount + ceAmount + expectedDuty;
+  const grandTotal = totalInvoiceValue + totalOverheads;
+
   return (
     <div className="space-y-8">
+      <style>{`
+        @media print {
+          body { visibility: hidden; }
+          #invoice-modal-container { visibility: visible; position: fixed; left: 0; top: 0; width: 100%; height: 100%; background: white; z-index: 9999; }
+          #invoice-modal-container * { visibility: visible; }
+          #invoice-modal-content { box-shadow: none !important; border: none !important; width: 100% !important; max-width: 100% !important; margin: 0 !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+
       <div className="bg-white p-8 rounded-lg shadow-lg max-w-4xl mx-auto">
         <h2 className="text-2xl font-bold text-gray-800 mb-6">Record New Export</h2>
         {successMessage && (
@@ -97,8 +150,7 @@ const ExportManagement: React.FC = () => {
             <p>{successMessage}</p>
           </div>
         )}
-        <form onSubmit={handleSubmit} className="space-y-8">
-            {/* Form content remains the same */}
+        <form onSubmit={handlePreSubmit} className="space-y-8">
             <div>
             <label htmlFor="shop" className="block text-sm font-medium text-gray-700">Destination Shop</label>
             <select id="shop" value={shopId} onChange={e => setShopId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
@@ -112,15 +164,17 @@ const ExportManagement: React.FC = () => {
             <div className="border border-gray-200 rounded-lg p-4">
             <h3 className="text-lg font-semibold text-gray-800 mb-4">Items to Export</h3>
             
-            <div className="hidden md:grid md:grid-cols-7 gap-4 items-center mb-2">
+            <div className="hidden md:grid md:grid-cols-9 gap-4 items-center mb-2">
                 <label className="font-medium text-sm text-gray-700 md:col-span-3">Product</label>
                 <label className="font-medium text-sm text-gray-700 md:col-span-1">Quantity</label>
-                <label className="font-medium text-sm text-gray-700 md:col-span-2">Landed Cost/Unit ($)</label>
+                <label className="font-medium text-sm text-gray-700 md:col-span-2">Invoice Price/Unit ($)</label>
+                <label className="font-medium text-sm text-gray-700 md:col-span-2">Total Worth ($)</label>
+                <label className="font-medium text-sm text-gray-700 md:col-span-1 text-right">Action</label>
             </div>
 
             <div className="space-y-4">
                 {items.map((item, index) => (
-                <div key={index} className="grid grid-cols-1 md:grid-cols-7 gap-4 items-end border-t border-gray-200 pt-4 md:border-none md:pt-0">
+                <div key={index} className="grid grid-cols-1 md:grid-cols-9 gap-4 items-end border-t border-gray-200 pt-4 md:border-none md:pt-0">
                     <div className="md:col-span-3">
                     <label className="block text-sm font-medium text-gray-700 md:hidden">Product</label>
                     <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
@@ -133,10 +187,18 @@ const ExportManagement: React.FC = () => {
                     <input type="number" placeholder="Qty" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="1" required />
                     </div>
                     <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 md:hidden">Landed Cost/Unit ($)</label>
-                    <input type="number" placeholder="Landed Cost" value={item.landedCost} onChange={e => handleItemChange(index, 'landedCost', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0.01" step="0.01" required />
+                    <label className="block text-sm font-medium text-gray-700 md:hidden">Invoice Price/Unit ($)</label>
+                    <input type="number" placeholder="Invoice Price" value={item.landedCost} onChange={e => handleItemChange(index, 'landedCost', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0.01" step="0.01" required />
                     </div>
-                    <button type="button" onClick={() => removeItemRow(index)} className="md:col-span-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg disabled:opacity-50" disabled={items.length <= 1}>X</button>
+                    <div className="md:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 md:hidden">Total Worth ($)</label>
+                         <div className="mt-1 block w-full border border-gray-200 bg-gray-50 rounded-md shadow-sm p-2 text-gray-900 text-right font-semibold">
+                             ${(item.quantity * item.landedCost).toFixed(2)}
+                        </div>
+                    </div>
+                    <div className="md:col-span-1 flex justify-end">
+                         <button type="button" onClick={() => removeItemRow(index)} className="w-full md:w-auto bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-3 rounded-lg disabled:opacity-50" disabled={items.length <= 1}>X</button>
+                    </div>
                 </div>
                 ))}
             </div>
@@ -144,29 +206,29 @@ const ExportManagement: React.FC = () => {
             </div>
 
             <div className="border border-gray-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Shipping &amp; Customs Details</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Shipping &amp; Customs Details (Overheads)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <select value={ffId} onChange={e => setFfId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Freight Forwarder (Optional)</option>
                 {freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
                 </select>
-                <input type="number" placeholder="Freight Amount ($)" value={ffAmount} onChange={e => setFfAmount(Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Freight Amount ($)" value={ffAmount} onChange={e => handleOverheadChange('ff', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
                 
                 <select value={caId} onChange={e => setCaId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Clearing Agent (Optional)</option>
                 {clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}
                 </select>
-                <input type="number" placeholder="Clearing Amount ($)" value={caAmount} onChange={e => setCaAmount(Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Clearing Amount ($)" value={caAmount} onChange={e => handleOverheadChange('ca', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
 
                 <select value={ceTypeId} onChange={e => setCeTypeId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Custom Expense (Optional)</option>
                 {customExpenseTypes.map(cet => <option key={cet.id} value={cet.id}>{cet.name}</option>)}
                 </select>
-                <input type="number" placeholder="Custom Expense Amount ($)" value={ceAmount} onChange={e => setCeAmount(Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Custom Expense Amount ($)" value={ceAmount} onChange={e => handleOverheadChange('ce', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
 
                 <div className="md:col-span-2">
                     <label htmlFor="duty" className="block text-sm font-medium text-gray-700">Expected Duty ($)</label>
-                    <input type="number" id="duty" value={expectedDuty} onChange={e => setExpectedDuty(Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                    <input type="number" id="duty" value={expectedDuty} onChange={e => handleOverheadChange('duty', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
                 </div>
             </div>
             </div>
@@ -213,6 +275,112 @@ const ExportManagement: React.FC = () => {
         </div>
       </div>
 
+      {/* Invoice Modal */}
+      {showInvoice && (
+        <div id="invoice-modal-container" className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div id="invoice-modal-content" className="bg-white rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto flex flex-col">
+                <div className="p-8">
+                    <div className="flex justify-between items-start border-b border-gray-300 pb-6 mb-6">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-800 tracking-wide">COMMERCIAL INVOICE</h1>
+                            <p className="text-sm text-gray-500 mt-1">Date: {new Date().toLocaleDateString()}</p>
+                        </div>
+                        <div className="text-right">
+                            <h3 className="text-lg font-bold text-gray-700 uppercase">Destination</h3>
+                            <p className="text-xl text-gray-800 font-semibold">{shops.find(s => s.id === shopId)?.name}</p>
+                            <p className="text-sm text-gray-600">{shops.find(s => s.id === shopId)?.address}</p>
+                        </div>
+                    </div>
+                    
+                    <div className="mb-8">
+                        <table className="min-w-full">
+                            <thead>
+                                <tr className="border-b-2 border-gray-800">
+                                    <th className="text-left py-3 font-bold text-gray-700 uppercase text-sm">Product</th>
+                                    <th className="text-center py-3 font-bold text-gray-700 uppercase text-sm">Quantity</th>
+                                    <th className="text-right py-3 font-bold text-gray-700 uppercase text-sm">Unit Price ($)</th>
+                                    <th className="text-right py-3 font-bold text-gray-700 uppercase text-sm">Total ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-gray-700">
+                                {items.map((item, idx) => {
+                                    const prodName = products.find(p => p.id === item.productId)?.name || 'Unknown';
+                                    return (
+                                        <tr key={idx} className="border-b border-gray-200 hover:bg-gray-50">
+                                            <td className="py-3">{prodName}</td>
+                                            <td className="text-center py-3">{item.quantity}</td>
+                                            <td className="text-right py-3">{item.landedCost.toFixed(2)}</td>
+                                            <td className="text-right py-3 font-medium">{(item.quantity * item.landedCost).toFixed(2)}</td>
+                                        </tr>
+                                    )
+                                })}
+                            </tbody>
+                            <tfoot className="bg-gray-50 border-t-2 border-gray-800">
+                                <tr>
+                                    <td colSpan={3} className="text-right font-semibold py-2 text-gray-700">Subtotal (Goods)</td>
+                                    <td className="text-right font-semibold py-2 text-gray-800">${totalInvoiceValue.toFixed(2)}</td>
+                                </tr>
+                                {ffAmount > 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Freight ({freightForwarders.find(f => f.id === ffId)?.name || 'N/A'})</td>
+                                        <td className="text-right py-1 text-sm text-gray-600">${ffAmount.toFixed(2)}</td>
+                                    </tr>
+                                )}
+                                {caAmount > 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Clearing ({clearingAgents.find(c => c.id === caId)?.name || 'N/A'})</td>
+                                        <td className="text-right py-1 text-sm text-gray-600">${caAmount.toFixed(2)}</td>
+                                    </tr>
+                                )}
+                                {ceAmount > 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Other Exp ({customExpenseTypes.find(c => c.id === ceTypeId)?.name || 'N/A'})</td>
+                                        <td className="text-right py-1 text-sm text-gray-600">${ceAmount.toFixed(2)}</td>
+                                    </tr>
+                                )}
+                                {expectedDuty > 0 && (
+                                    <tr>
+                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Expected Duty</td>
+                                        <td className="text-right py-1 text-sm text-gray-600">${expectedDuty.toFixed(2)}</td>
+                                    </tr>
+                                )}
+                                <tr>
+                                    <td colSpan={3} className="text-right font-bold py-4 text-lg border-t border-gray-300">Total Landed Value</td>
+                                    <td className="text-right font-bold py-4 text-lg text-primary border-t border-gray-300">${grandTotal.toFixed(2)}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end space-x-4 no-print">
+                    <button onClick={() => setShowInvoice(false)} className="px-4 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 shadow-sm transition-colors">
+                        Cancel Entry
+                    </button>
+                    <button 
+                        onClick={handlePrint} 
+                        disabled={printDisabled} 
+                        className={`px-4 py-2 rounded-lg text-white font-bold shadow-sm transition-colors flex items-center ${printDisabled ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        Print Invoice
+                    </button>
+                    <button 
+                        onClick={handleFinalSubmit} 
+                        className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-bold shadow-md transition-colors flex items-center"
+                    >
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                        Save & Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {selectedShipment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -245,6 +413,8 @@ const ExportManagement: React.FC = () => {
                                     <th className="px-4 py-2 text-left">Product</th>
                                     <th className="px-4 py-2 text-center">Expected</th>
                                     <th className="px-4 py-2 text-center">Received</th>
+                                    <th className="px-4 py-2 text-right">Invoice Price</th>
+                                    <th className="px-4 py-2 text-right">Total Worth</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 text-sm">
@@ -258,6 +428,8 @@ const ExportManagement: React.FC = () => {
                                             <td className="px-4 py-3 text-center font-semibold">
                                                 {isReceived ? item.receivedQuantity : <span className="text-gray-400">N/A</span>}
                                             </td>
+                                            <td className="px-4 py-3 text-right">${item.landedCost.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold">${(item.landedCost * item.expectedQuantity).toFixed(2)}</td>
                                         </tr>
                                     );
                                 })}

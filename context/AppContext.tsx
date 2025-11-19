@@ -623,7 +623,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       items: data.items.map(item => ({
         productId: item.productId,
         expectedQuantity: item.quantity,
-        landedCost: item.landedCost,
+        landedCost: item.landedCost, // This is now the base Invoice Price
       })),
       freightCost: data.freightForwarder.amount,
       clearingCost: data.clearingAgent.amount,
@@ -683,16 +683,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const batch = writeBatch(db);
     const now = Timestamp.now();
 
+    // Calculate overheads per unit based on total shipment quantity
     const totalOverheads = shipment.freightCost + shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty;
-    const totalReceivedQuantity = payload.receivedItems.reduce((sum, item) => sum + item.quantity, 0);
-    const averageOverheadPerItem = totalReceivedQuantity > 0 ? totalOverheads / totalReceivedQuantity : 0;
+    const totalShipmentQty = shipment.items.reduce((sum, i) => sum + i.expectedQuantity, 0);
+    const additionalCostPerUnit = totalShipmentQty > 0 ? totalOverheads / totalShipmentQty : 0;
 
     payload.receivedItems.forEach(receivedItem => {
         if (receivedItem.quantity > 0) {
             const originalItem = shipment.items.find(i => i.productId === receivedItem.productId);
             const product = products.find(p => p.id === receivedItem.productId);
             if (originalItem && product) {
-                const finalUnitCost = originalItem.landedCost + averageOverheadPerItem;
+                // Shop Cost = Invoice Price (Landed Cost in Shipment) + Allocated Overhead
+                const finalUnitCost = originalItem.landedCost + additionalCostPerUnit;
                 const importRef = doc(collection(db, 'transactions'));
                 batch.set(importRef, {
                     shopId: shipment.shopId,
