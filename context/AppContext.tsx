@@ -37,6 +37,14 @@ export interface AddExportPayload {
   expectedDuty: number;
 }
 
+export interface UpdateShipmentCostsPayload {
+    shipmentId: string;
+    freightCost: number;
+    clearingCost: number;
+    customExpenseCost: number;
+    expectedDuty: number;
+}
+
 export interface SaleItem {
     productId: string;
     quantity: number;
@@ -116,6 +124,7 @@ interface AppContextType {
   recordSalesReturn: (payload: RecordSalesReturnPayload) => void;
   addExpense: (expense: { shopId: string, expenseAccountId: string, description: string, amount: number, date: Date, paymentAccountId: string }) => void;
   addExport: (data: AddExportPayload) => void;
+  updateShipmentCosts: (data: UpdateShipmentCostsPayload) => Promise<void>;
   customers: Customer[];
   addCustomer: (customer: Omit<Customer, 'id'>) => void;
   clearingAgents: ClearingAgent[];
@@ -138,6 +147,7 @@ interface AppContextType {
   getStockLevel: (productId: string, locationId: string) => number;
   alerts: Alert[];
   logAlert: (alert: Omit<Alert, 'id' | 'date' | 'isRead'>) => void;
+  markAlertAsRead: (alertId: string) => void;
   warehouses: Warehouse[];
   addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => void;
   transferStock: (payload: TransferStockPayload) => void;
@@ -357,8 +367,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const addShop = async (shop: AddShopPayload) => {
-    // Simply create the shop document with empty image arrays.
-    // Image upload functionality has been removed as per requirement.
     const newShopData = {
       ...shop,
       shopImageUrls: [],
@@ -430,6 +438,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       date: Timestamp.now(),
       isRead: false,
     });
+  };
+
+  const markAlertAsRead = async (alertId: string) => {
+    const alertRef = doc(db, 'alerts', alertId);
+    await updateDoc(alertRef, { isRead: true });
   };
 
   const getAdvanceBalance = (customerId: string): number => {
@@ -676,6 +689,62 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await batch.commit();
   };
 
+  const updateShipmentCosts = async (data: UpdateShipmentCostsPayload) => {
+    const shipment = shipments.find(s => s.id === data.shipmentId);
+    if (!shipment) return;
+
+    const batch = writeBatch(db);
+    const shipmentRef = doc(db, 'shipments', data.shipmentId);
+
+    // 1. Update Shipment Document
+    batch.update(shipmentRef, {
+        freightCost: data.freightCost,
+        clearingCost: data.clearingCost,
+        customExpenseCost: data.customExpenseCost,
+        expectedDuty: data.expectedDuty,
+    });
+
+    // 2. Update Head Office Expenses (Best Effort Search)
+    // Since we don't have direct linking IDs in the simple transaction schema, we search by description
+    const hoTransactions = transactions.filter(t => t.shopId === 'HO' && t.description.includes(`Shipment #${data.shipmentId}`));
+    
+    hoTransactions.forEach(t => {
+        const tRef = doc(db, 'transactions', t.id);
+        if (t.description.includes("Freight Forwarder")) {
+            batch.update(tRef, { amount: data.freightCost });
+        } else if (t.description.includes("Clearing Agent")) {
+             batch.update(tRef, { amount: data.clearingCost });
+        } else if (t.description.includes("Custom Expense")) {
+             batch.update(tRef, { amount: data.customExpenseCost });
+        }
+    });
+
+    // 3. If Stock Received: Recalculate Shop Inventory Value (Landed Cost)
+    if (shipment.status === ShipmentStatus.RECEIVED) {
+        const newTotalOverheads = data.freightCost + data.clearingCost + data.customExpenseCost + data.expectedDuty;
+        const totalShipmentQty = shipment.items.reduce((sum, i) => sum + i.expectedQuantity, 0);
+        const additionalCostPerUnit = totalShipmentQty > 0 ? newTotalOverheads / totalShipmentQty : 0;
+
+        // Find IMPORT transactions related to this shipment
+        const importTransactions = transactions.filter(t => 
+            t.shopId === shipment.shopId && 
+            t.type === TransactionType.IMPORT && 
+            t.description.includes(`Shipment #${data.shipmentId}`)
+        );
+
+        importTransactions.forEach(t => {
+            const originalItem = shipment.items.find(i => i.productId === t.productId);
+            if (originalItem) {
+                const newUnitCost = originalItem.landedCost + additionalCostPerUnit; // Invoice Price + New Overhead Allocation
+                const tRef = doc(db, 'transactions', t.id);
+                batch.update(tRef, { amount: newUnitCost });
+            }
+        });
+    }
+
+    await batch.commit();
+  };
+
   const receiveShipment = async (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[]; locationId: string }) => {
     const shipment = shipments.find(s => s.id === payload.shipmentId);
     if (!shipment) return;
@@ -855,11 +924,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const value = {
     role, setRole, shopId, setShopId, shops, addShop, updateShop, deleteShop, products, addProduct,
-    users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, customers, addCustomer,
+    users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, updateShipmentCosts, customers, addCustomer,
     clearingAgents, addClearingAgent, freightForwarders, addFreightForwarder,
     customExpenseTypes, addCustomExpenseType, expenseAccounts, addExpenseAccount,
     shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
-    shopAccounts, addShopAccount, getStockLevel, alerts, logAlert,
+    shopAccounts, addShopAccount, getStockLevel, alerts, logAlert, markAlertAsRead,
     warehouses, addWarehouse, transferStock, assets, addAsset,
     recordAdvance, getAdvanceBalance,
   };

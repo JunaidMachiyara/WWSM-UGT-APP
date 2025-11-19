@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { Shipment, ShipmentStatus } from '../../../types';
 
@@ -17,6 +17,7 @@ const ExportManagement: React.FC = () => {
     clearingAgents, 
     customExpenseTypes,
     addExport,
+    updateShipmentCosts,
     shipments
   } = useAppContext();
 
@@ -32,9 +33,29 @@ const ExportManagement: React.FC = () => {
   const [successMessage, setSuccessMessage] = useState('');
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
 
+  // Edit Costs State
+  const [editCosts, setEditCosts] = useState({
+      freight: 0,
+      clearing: 0,
+      custom: 0,
+      duty: 0
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+
   // Modal State
   const [showInvoice, setShowInvoice] = useState(false);
   const [printDisabled, setPrintDisabled] = useState(false);
+
+  useEffect(() => {
+    if (selectedShipment) {
+        setEditCosts({
+            freight: selectedShipment.freightCost,
+            clearing: selectedShipment.clearingCost,
+            custom: selectedShipment.customExpenseCost,
+            duty: selectedShipment.expectedDuty
+        });
+    }
+  }, [selectedShipment]);
 
   const handleItemChange = (index: number, field: keyof ExportItemRow, value: string | number) => {
     const newItems = [...items];
@@ -125,6 +146,27 @@ const ExportManagement: React.FC = () => {
     setTimeout(() => setSuccessMessage(''), 5000);
   };
 
+  const handleUpdateCosts = async () => {
+    if (!selectedShipment) return;
+    setIsUpdating(true);
+    try {
+        await updateShipmentCosts({
+            shipmentId: selectedShipment.id,
+            freightCost: editCosts.freight,
+            clearingCost: editCosts.clearing,
+            customExpenseCost: editCosts.custom,
+            expectedDuty: editCosts.duty
+        });
+        setIsUpdating(false);
+        alert("Shipment costs updated successfully! Inventory valuation has been adjusted if goods were already received.");
+        setSelectedShipment(null); // Close modal
+    } catch (e) {
+        console.error(e);
+        setIsUpdating(false);
+        alert("Failed to update costs.");
+    }
+  };
+
   const sortedShipments = [...shipments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   const totalInvoiceValue = items.reduce((sum, item) => sum + (item.quantity * item.landedCost), 0);
@@ -206,25 +248,25 @@ const ExportManagement: React.FC = () => {
             </div>
 
             <div className="border border-gray-200 rounded-lg p-4">
-            <h3 className="text-lg font-semibold text-gray-800 mb-4">Shipping &amp; Customs Details (Overheads)</h3>
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Estimated Shipping &amp; Customs (Overheads)</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
                 <select value={ffId} onChange={e => setFfId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Freight Forwarder (Optional)</option>
                 {freightForwarders.map(ff => <option key={ff.id} value={ff.id}>{ff.name}</option>)}
                 </select>
-                <input type="number" placeholder="Freight Amount ($)" value={ffAmount} onChange={e => handleOverheadChange('ff', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Estimated Freight ($)" value={ffAmount} onChange={e => handleOverheadChange('ff', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
                 
                 <select value={caId} onChange={e => setCaId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Clearing Agent (Optional)</option>
                 {clearingAgents.map(ca => <option key={ca.id} value={ca.id}>{ca.name}</option>)}
                 </select>
-                <input type="number" placeholder="Clearing Amount ($)" value={caAmount} onChange={e => handleOverheadChange('ca', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Estimated Clearing ($)" value={caAmount} onChange={e => handleOverheadChange('ca', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
 
                 <select value={ceTypeId} onChange={e => setCeTypeId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                 <option value="">Select Custom Expense (Optional)</option>
                 {customExpenseTypes.map(cet => <option key={cet.id} value={cet.id}>{cet.name}</option>)}
                 </select>
-                <input type="number" placeholder="Custom Expense Amount ($)" value={ceAmount} onChange={e => handleOverheadChange('ce', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
+                <input type="number" placeholder="Estimated Custom Exp ($)" value={ceAmount} onChange={e => handleOverheadChange('ce', Number(e.target.value))} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" />
 
                 <div className="md:col-span-2">
                     <label htmlFor="duty" className="block text-sm font-medium text-gray-700">Expected Duty ($)</label>
@@ -266,7 +308,7 @@ const ExportManagement: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                    <button onClick={() => setSelectedShipment(shipment)} className="text-primary hover:text-primary-dark font-medium">View</button>
+                    <button onClick={() => setSelectedShipment(shipment)} className="text-primary hover:text-primary-dark font-medium">View/Edit</button>
                   </td>
                 </tr>
               ))}
@@ -392,22 +434,74 @@ const ExportManagement: React.FC = () => {
                      <p className="text-sm text-gray-500">To: {shops.find(s => s.id === selectedShipment.shopId)?.name}</p>
                 </div>
                 <div className="p-6">
-                    <div className="grid grid-cols-2 gap-4 mb-6 text-sm">
-                        <div><span className="font-semibold text-gray-600">Date:</span> {new Date(selectedShipment.date).toLocaleString()}</div>
-                        <div><span className="font-semibold text-gray-600">Status:</span> 
+                    <div className="flex items-center mb-4">
+                         <div className="text-sm mr-6"><span className="font-semibold text-gray-600">Date:</span> {new Date(selectedShipment.date).toLocaleString()}</div>
+                         <div className="text-sm"><span className="font-semibold text-gray-600">Status:</span> 
                             <span className={`ml-2 px-2 py-0.5 inline-flex text-xs leading-5 font-semibold rounded-full ${selectedShipment.status === ShipmentStatus.RECEIVED ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                                 {selectedShipment.status}
                             </span>
                         </div>
-                        <div><span className="font-semibold text-gray-600">Freight Cost:</span> ${selectedShipment.freightCost.toFixed(2)}</div>
-                        <div><span className="font-semibold text-gray-600">Clearing Cost:</span> ${selectedShipment.clearingCost.toFixed(2)}</div>
-                        <div><span className="font-semibold text-gray-600">Customs Cost:</span> ${selectedShipment.customExpenseCost.toFixed(2)}</div>
-                        <div><span className="font-semibold text-gray-600">Duty:</span> ${selectedShipment.expectedDuty.toFixed(2)}</div>
+                    </div>
+
+                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-200 mb-6">
+                        <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase border-b pb-2">Actual Cost Updates</h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div>
+                                <label className="block text-xs text-gray-500">Freight Cost</label>
+                                <input 
+                                    type="number" 
+                                    value={editCosts.freight} 
+                                    onChange={e => setEditCosts({...editCosts, freight: Number(e.target.value)})}
+                                    className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
+                                    style={{ backgroundColor: 'white', color: 'black' }}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500">Clearing Cost</label>
+                                <input 
+                                    type="number" 
+                                    value={editCosts.clearing} 
+                                    onChange={e => setEditCosts({...editCosts, clearing: Number(e.target.value)})}
+                                    className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
+                                    style={{ backgroundColor: 'white', color: 'black' }}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500">Customs Cost</label>
+                                <input 
+                                    type="number" 
+                                    value={editCosts.custom} 
+                                    onChange={e => setEditCosts({...editCosts, custom: Number(e.target.value)})}
+                                    className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
+                                    style={{ backgroundColor: 'white', color: 'black' }}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-gray-500">Duty</label>
+                                <input 
+                                    type="number" 
+                                    value={editCosts.duty} 
+                                    onChange={e => setEditCosts({...editCosts, duty: Number(e.target.value)})}
+                                    className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
+                                    style={{ backgroundColor: 'white', color: 'black' }}
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4 text-right">
+                            <button 
+                                onClick={handleUpdateCosts} 
+                                disabled={isUpdating}
+                                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold py-2 px-4 rounded shadow-sm"
+                            >
+                                {isUpdating ? 'Updating...' : 'Update Actual Costs'}
+                            </button>
+                            <p className="text-xs text-gray-400 mt-1 italic">Updating here recalculates shop inventory values.</p>
+                        </div>
                     </div>
                     
                     <h4 className="text-md font-semibold text-gray-700 mb-2">Items</h4>
                     <div className="border rounded-lg overflow-hidden border-gray-200">
-                        <table className="min-w-full">
+                        <table className="min-w-full bg-white text-black" style={{ backgroundColor: 'white', color: 'black' }}>
                             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                                 <tr>
                                     <th className="px-4 py-2 text-left">Product</th>
@@ -423,13 +517,13 @@ const ExportManagement: React.FC = () => {
                                     const hasDiscrepancy = isReceived && item.expectedQuantity !== item.receivedQuantity;
                                     return (
                                         <tr key={item.productId} className={hasDiscrepancy ? 'bg-red-50' : ''}>
-                                            <td className="px-4 py-3 font-medium text-gray-800">{products.find(p => p.id === item.productId)?.name}</td>
-                                            <td className="px-4 py-3 text-center">{item.expectedQuantity}</td>
-                                            <td className="px-4 py-3 text-center font-semibold">
+                                            <td className="px-4 py-3 font-medium text-black" style={{ color: 'black' }}>{products.find(p => p.id === item.productId)?.name}</td>
+                                            <td className="px-4 py-3 text-center text-black" style={{ color: 'black' }}>{item.expectedQuantity}</td>
+                                            <td className="px-4 py-3 text-center font-semibold text-black" style={{ color: 'black' }}>
                                                 {isReceived ? item.receivedQuantity : <span className="text-gray-400">N/A</span>}
                                             </td>
-                                            <td className="px-4 py-3 text-right">${item.landedCost.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right font-semibold">${(item.landedCost * item.expectedQuantity).toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right text-black" style={{ color: 'black' }}>${item.landedCost.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold text-black" style={{ color: 'black' }}>${(item.landedCost * item.expectedQuantity).toFixed(2)}</td>
                                         </tr>
                                     );
                                 })}

@@ -1,6 +1,7 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { Shipment, ShipmentStatus } from '../../../types';
+import { Shipment, ShipmentStatus, AlertType } from '../../../types';
 
 interface ReceivedItem {
     productId: string;
@@ -8,7 +9,7 @@ interface ReceivedItem {
 }
 
 const ReceiveStock: React.FC = () => {
-    const { shopId, shipments, products, receiveShipment, warehouses, shops } = useAppContext();
+    const { shopId, shipments, products, receiveShipment, warehouses, shops, logAlert } = useAppContext();
     const [pendingShipments, setPendingShipments] = useState<Shipment[]>([]);
     const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
     const [receivedItems, setReceivedItems] = useState<ReceivedItem[]>([]);
@@ -58,6 +59,15 @@ const ReceiveStock: React.FC = () => {
             shipmentId: selectedShipment.id,
             receivedItems: receivedItems,
             locationId: locationId,
+        });
+        
+        // Trigger alert for Head Office
+        const shopName = shops.find(s => s.id === shopId)?.name || 'Shop';
+        logAlert({
+            shopId: 'HO', // Target the alert to Head Office (or filter by it later)
+            type: AlertType.STOCK_DISCREPANCY, // Reusing existing type or could use a generic 'NOTIFICATION' type
+            message: `Shop "${shopName}" has received Shipment #${selectedShipment.id}. Please review and update actual clearing/customs costs for accurate inventory valuation.`,
+            context: { shipmentId: selectedShipment.id, shopId: shopId }
         });
 
         setSuccessMessage(`Shipment #${selectedShipment.id} has been successfully received into inventory.`);

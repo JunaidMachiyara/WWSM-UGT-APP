@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import Layout from '../../components/Layout';
 import HOSidebar from './HOSidebar';
@@ -12,8 +13,9 @@ import FreightForwarderSetup from './views/FreightForwarderSetup';
 import CustomExpenseSetup from './views/CustomExpenseSetup';
 import ExpenseAccountManagement from './views/ExpenseAccountManagement';
 import CurrencyManagement from './views/CurrencyManagement';
+import HOAlerts from './views/HOAlerts';
 
-export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement';
+export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement' | 'alerts';
 
 const HODashboard: React.FC = () => {
   const [view, setView] = useState<HOView>('dashboard');
@@ -42,6 +44,8 @@ const HODashboard: React.FC = () => {
         return <ExpenseAccountManagement />;
       case 'currencyManagement':
         return <CurrencyManagement />;
+      case 'alerts':
+        return <HOAlerts />;
       default:
         return <Dashboard />;
     }
@@ -60,6 +64,7 @@ const HODashboard: React.FC = () => {
       case 'customExpenseSetup': return 'Custom Expense Setup';
       case 'expenseAccountManagement': return 'Expense Account Management';
       case 'currencyManagement': return 'Currency Management';
+      case 'alerts': return 'Notifications & Alerts';
       default: return 'Dashboard';
     }
   };
