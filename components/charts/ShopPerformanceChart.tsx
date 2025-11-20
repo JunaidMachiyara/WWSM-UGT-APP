@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { Transaction, Shop, TransactionType } from '../../types';
 
@@ -15,7 +15,7 @@ const ShopPerformanceChart: React.FC<ChartProps> = ({ transactions, shops }) => 
       const shopSales = transactions.filter(t => t.shopId === shop.id && (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE));
       const shopExpenses = transactions.filter(t => t.shopId === shop.id && t.type === TransactionType.EXPENSE);
       
-      // FIX: Calculate total sales by multiplying amount by quantity.
+      // Calculate total sales by multiplying amount by quantity.
       const totalSales = shopSales.reduce((acc, t) => acc + (t.amount * (t.quantity || 1)), 0);
       const totalExpenses = shopExpenses.reduce((acc, t) => acc + t.amount, 0);
 
@@ -30,8 +30,8 @@ const ShopPerformanceChart: React.FC<ChartProps> = ({ transactions, shops }) => 
   return (
     <div className="bg-white p-6 rounded-lg shadow-lg">
        <h3 className="text-lg font-semibold mb-4 text-gray-700">Shop Performance Overview</h3>
-       <div style={{ width: '100%', height: 300 }}>
-        <ResponsiveContainer>
+       <div className="h-80">
+        <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(128, 128, 128, 0.3)"/>
             <XAxis dataKey="name" stroke="#6B7280"/>
