@@ -32,6 +32,7 @@ const ExportManagement: React.FC = () => {
   const [expectedDuty, setExpectedDuty] = useState(0);
   const [successMessage, setSuccessMessage] = useState('');
   const [selectedShipment, setSelectedShipment] = useState<Shipment | null>(null);
+  const [shipmentId, setShipmentId] = useState('');
 
   // Edit Costs State
   const [editCosts, setEditCosts] = useState({
@@ -56,6 +57,51 @@ const ExportManagement: React.FC = () => {
         });
     }
   }, [selectedShipment]);
+
+  // Auto-generate Shipment ID
+  useEffect(() => {
+    if (!shopId) {
+        setShipmentId('');
+        return;
+    }
+
+    const generateShipmentId = () => {
+        // Format: 5001 + "-" + MMDDYY + "-" + Shop Name
+        const today = new Date();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const yy = String(today.getFullYear()).slice(-2);
+        const dateSuffix = `${mm}${dd}${yy}`;
+
+        // Find max sequence starting with 5001
+        // Note: We scan ALL shipments to maintain a global sequence for Head Office Exports, 
+        // or you could filter by shop if you want shop-specific sequences.
+        // Typically HO Exports have a central sequence.
+        let maxSeq = 5000;
+        
+        shipments.forEach(s => {
+            // Regex to match pattern starting with digits
+            const match = s.id.match(/^(\d+)-/);
+            if (match && match[1]) {
+                const seq = parseInt(match[1]);
+                if (!isNaN(seq) && seq > maxSeq) {
+                    maxSeq = seq;
+                }
+            }
+        });
+
+        const nextSeq = maxSeq + 1;
+        const shopName = shops.find(s => s.id === shopId)?.name || 'SHOP';
+        
+        // Clean shop name for ID (remove spaces/special chars)
+        const safeShopName = shopName.replace(/[^a-zA-Z0-9]/g, '');
+
+        return `${nextSeq}-${dateSuffix}-${safeShopName}`;
+    };
+
+    setShipmentId(generateShipmentId());
+
+  }, [shopId, shipments, shops]);
 
   const handleItemChange = (index: number, field: keyof ExportItemRow, value: string | number) => {
     const newItems = [...items];
@@ -132,6 +178,7 @@ const ExportManagement: React.FC = () => {
   // Finalizes export after invoice review
   const handleFinalSubmit = () => {
     addExport({
+        shipmentId,
         shopId,
         items,
         freightForwarder: { id: ffId, amount: ffAmount },
@@ -140,7 +187,7 @@ const ExportManagement: React.FC = () => {
         expectedDuty
     });
     
-    setSuccessMessage('Export recorded successfully!');
+    setSuccessMessage(`Export recorded successfully! ID: ${shipmentId}`);
     resetForm();
     setShowInvoice(false);
     setTimeout(() => setSuccessMessage(''), 5000);
@@ -169,9 +216,14 @@ const ExportManagement: React.FC = () => {
 
   const sortedShipments = [...shipments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+  // Invoice Calculation
   const totalInvoiceValue = items.reduce((sum, item) => sum + (item.quantity * item.landedCost), 0);
-  const totalOverheads = ffAmount + caAmount + ceAmount + expectedDuty;
-  const grandTotal = totalInvoiceValue + totalOverheads;
+  
+  // Billable by HO: Goods + Freight
+  const billableTotal = totalInvoiceValue + ffAmount;
+  
+  // Local Costs (Estimates) - Not on Invoice: Clearing + Custom + Duty
+  const localTotal = caAmount + ceAmount + expectedDuty;
 
   return (
     <div className="space-y-8">
@@ -193,14 +245,21 @@ const ExportManagement: React.FC = () => {
           </div>
         )}
         <form onSubmit={handlePreSubmit} className="space-y-8">
-            <div>
-            <label htmlFor="shop" className="block text-sm font-medium text-gray-700">Destination Shop</label>
-            <select id="shop" value={shopId} onChange={e => setShopId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
-                <option value="">Select a shop</option>
-                {shops.filter(s => s.isActive).map(shop => (
-                <option key={shop.id} value={shop.id}>{shop.name}</option>
-                ))}
-            </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label htmlFor="shop" className="block text-sm font-medium text-gray-700">Destination Shop</label>
+                    <select id="shop" value={shopId} onChange={e => setShopId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
+                        <option value="">Select a shop</option>
+                        {shops.filter(s => s.isActive).map(shop => (
+                        <option key={shop.id} value={shop.id}>{shop.name}</option>
+                        ))}
+                    </select>
+                </div>
+                <div>
+                    <label htmlFor="shipmentId" className="block text-sm font-medium text-gray-700">Invoice / Shipment Number</label>
+                     <input type="text" id="shipmentId" value={shipmentId} readOnly className="mt-1 block w-full border border-gray-200 bg-gray-100 rounded-md shadow-sm p-2 text-gray-600 cursor-not-allowed" placeholder="Auto-generated" />
+                     <p className="text-xs text-gray-500 mt-1">Auto-generated: Seq - Date - Shop</p>
+                </div>
             </div>
 
             <div className="border border-gray-200 rounded-lg p-4">
@@ -325,6 +384,7 @@ const ExportManagement: React.FC = () => {
                     <div className="flex justify-between items-start border-b border-gray-300 pb-6 mb-6">
                         <div>
                             <h1 className="text-3xl font-bold text-gray-800 tracking-wide">COMMERCIAL INVOICE</h1>
+                            <p className="text-xl text-gray-700 font-mono mt-1">#{shipmentId}</p>
                             <p className="text-sm text-gray-500 mt-1">Date: {new Date().toLocaleDateString()}</p>
                         </div>
                         <div className="text-right">
@@ -364,34 +424,49 @@ const ExportManagement: React.FC = () => {
                                 </tr>
                                 {ffAmount > 0 && (
                                     <tr>
-                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Freight ({freightForwarders.find(f => f.id === ffId)?.name || 'N/A'})</td>
+                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Freight ({freightForwarders.find(f => f.id === ffId)?.name || 'Freight'})</td>
                                         <td className="text-right py-1 text-sm text-gray-600">${ffAmount.toFixed(2)}</td>
                                     </tr>
                                 )}
-                                {caAmount > 0 && (
-                                    <tr>
-                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Clearing ({clearingAgents.find(c => c.id === caId)?.name || 'N/A'})</td>
-                                        <td className="text-right py-1 text-sm text-gray-600">${caAmount.toFixed(2)}</td>
-                                    </tr>
-                                )}
-                                {ceAmount > 0 && (
-                                    <tr>
-                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Other Exp ({customExpenseTypes.find(c => c.id === ceTypeId)?.name || 'N/A'})</td>
-                                        <td className="text-right py-1 text-sm text-gray-600">${ceAmount.toFixed(2)}</td>
-                                    </tr>
-                                )}
-                                {expectedDuty > 0 && (
-                                    <tr>
-                                        <td colSpan={3} className="text-right py-1 text-sm text-gray-600">Expected Duty</td>
-                                        <td className="text-right py-1 text-sm text-gray-600">${expectedDuty.toFixed(2)}</td>
-                                    </tr>
-                                )}
+                                
                                 <tr>
-                                    <td colSpan={3} className="text-right font-bold py-4 text-lg border-t border-gray-300">Total Landed Value</td>
-                                    <td className="text-right font-bold py-4 text-lg text-primary border-t border-gray-300">${grandTotal.toFixed(2)}</td>
+                                    <td colSpan={3} className="text-right font-bold py-4 text-lg border-t border-gray-300">Total Invoice Amount (Due to HO)</td>
+                                    <td className="text-right font-bold py-4 text-lg text-primary border-t border-gray-300">${billableTotal.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                         </table>
+
+                        {/* Local Payables Section - Information Only */}
+                        {(localTotal > 0) && (
+                            <div className="mt-8 border-t-2 border-dashed border-gray-300 pt-4 bg-yellow-50 p-4 rounded">
+                                <h4 className="text-sm font-bold text-gray-700 uppercase mb-2">Estimated Local Payables (Not included in Invoice)</h4>
+                                <p className="text-xs text-gray-500 mb-2">These costs are estimated and will be paid directly by the shop to local agents/authorities.</p>
+                                <div className="grid grid-cols-2 gap-4 text-sm">
+                                    {caAmount > 0 && (
+                                        <div className="flex justify-between">
+                                            <span>Clearing ({clearingAgents.find(c => c.id === caId)?.name || 'Agent'}):</span>
+                                            <span>${caAmount.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {ceAmount > 0 && (
+                                        <div className="flex justify-between">
+                                            <span>Other Expenses ({customExpenseTypes.find(c => c.id === ceTypeId)?.name || 'Custom'}):</span>
+                                            <span>${ceAmount.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    {expectedDuty > 0 && (
+                                        <div className="flex justify-between">
+                                            <span>Expected Duty:</span>
+                                            <span>${expectedDuty.toFixed(2)}</span>
+                                        </div>
+                                    )}
+                                    <div className="flex justify-between font-bold border-t border-gray-300 pt-1 mt-1">
+                                        <span>Total Local Estimates:</span>
+                                        <span>${localTotal.toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 

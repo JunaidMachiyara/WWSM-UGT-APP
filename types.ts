@@ -1,3 +1,4 @@
+
 export enum UserRole {
   HEAD_OFFICE = 'HEAD_OFFICE',
   SHOP_OPERATOR = 'SHOP_OPERATOR',
@@ -15,7 +16,8 @@ export enum TransactionType {
   CREDIT_SALE = 'CREDIT_SALE',
   SALES_RECEIPT = 'SALES_RECEIPT',
   EXPENSE = 'EXPENSE',
-  IMPORT = 'IMPORT', // From Head Office to Shop
+  IMPORT = 'IMPORT', // From Head Office to Shop (Product + Freight)
+  IMPORT_OVERHEAD = 'IMPORT_OVERHEAD', // Local costs (Clearing, Duty) adding to inventory value
   SALES_RETURN = 'SALES_RETURN',
   STOCK_TRANSFER_IN = 'STOCK_TRANSFER_IN',
   STOCK_TRANSFER_OUT = 'STOCK_TRANSFER_OUT',
@@ -82,8 +84,11 @@ export interface Shipment {
   status: ShipmentStatus;
   items: ShipmentItem[];
   freightCost: number;
+  freightForwarderId?: string;
   clearingCost: number;
+  clearingAgentId?: string;
   customExpenseCost: number;
+  customExpenseTypeId?: string;
   expectedDuty: number;
 }
 
@@ -132,6 +137,7 @@ export interface Transaction {
   shopId: string;
   invoiceId?: string;
   receiptNumber?: string;
+  externalReference?: string; // Manual Reference (e.g., Manual Invoice Ref)
   productId?: string;
   type: TransactionType;
   description: string;

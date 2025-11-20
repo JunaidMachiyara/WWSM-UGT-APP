@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { AccountType, TransactionType } from '../../../types';
@@ -27,10 +28,18 @@ const AccountManagement: React.FC = () => {
             .filter(t => t.paymentAccountId === account.id && t.type === TransactionType.SALES_RECEIPT)
             .forEach(t => balance += t.amount);
 
-        // Subtract all outgoing transactions
+        // Subtract all outgoing transactions (Expenses & Import Local Costs)
         shopTransactions
-            .filter(t => t.paymentAccountId === account.id && t.type === TransactionType.EXPENSE)
-            .forEach(t => balance -= t.amount);
+            .filter(t => t.paymentAccountId === account.id && (t.type === TransactionType.EXPENSE || t.type === TransactionType.IMPORT_OVERHEAD))
+            .forEach(t => {
+                 // IMPORT_OVERHEAD stores the 'amount' as PER UNIT and 'quantity' as QTY.
+                 // EXPENSE stores 'amount' as TOTAL.
+                 if (t.type === TransactionType.IMPORT_OVERHEAD) {
+                     balance -= (t.amount * (t.quantity || 1));
+                 } else {
+                     balance -= t.amount;
+                 }
+            });
             
         balances[account.id] = balance;
     });

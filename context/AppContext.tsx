@@ -29,6 +29,7 @@ export interface ExportItem {
 }
 
 export interface AddExportPayload {
+  shipmentId: string;
   shopId: string;
   items: ExportItem[];
   freightForwarder: { id: string; amount: number };
@@ -54,6 +55,8 @@ export interface SaleItem {
 export interface RecordSalePayload {
     shopId: string;
     customerId: string;
+    invoiceNumber: string;
+    manualReference?: string;
     items: (SaleItem & { locationId: string })[];
     cashPaid: number;
     paymentAccountId: string;
@@ -102,6 +105,17 @@ export interface RecordAdvancePayload {
 
 export interface AddShopPayload extends Omit<Shop, 'id' | 'shopImageUrls' | 'surroundingsImageUrls'> {
     // Images removed as per request
+}
+
+export interface PaymentVoucherPayload {
+    shopId: string;
+    amount: number;
+    date: Date;
+    paymentAccountId: string;
+    category: 'GENERAL' | 'CLEARING' | 'CUSTOMS' | 'DUTY' | 'HEAD_OFFICE';
+    beneficiaryName?: string; // For description construction
+    referenceId?: string; // Agent ID, Expense Type ID, etc.
+    notes?: string;
 }
 
 
@@ -155,6 +169,7 @@ interface AppContextType {
   addAsset: (payload: AddAssetPayload) => void;
   recordAdvance: (payload: RecordAdvancePayload) => void;
   getAdvanceBalance: (customerId: string) => number;
+  recordPaymentVoucher: (payload: PaymentVoucherPayload) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -481,7 +496,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const recordSale = async (sale: RecordSalePayload & { date: Date }) => {
     const batch = writeBatch(db);
     const saleDate = sale.date;
-    const invoiceId = `inv-${Date.now()}`;
+    const invoiceId = sale.invoiceNumber;
 
     sale.items.forEach(item => {
         const stockLevel = getStockLevel(item.productId, item.locationId);
@@ -514,6 +529,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             batch.set(transRef, {
                 shopId: sale.shopId,
                 invoiceId,
+                externalReference: sale.manualReference,
                 productId: item.productId,
                 type: saleType,
                 description: `${description}: ${product.name}`,
@@ -531,6 +547,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         batch.set(receiptRef, {
             shopId: sale.shopId,
             invoiceId,
+            externalReference: sale.manualReference,
             type: TransactionType.SALES_RECEIPT,
             description: `Payment for invoice ${invoiceId}`,
             amount: convertedCashPaid,
@@ -545,6 +562,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         batch.set(advanceUsageRef, {
             shopId: sale.shopId,
             invoiceId,
+            externalReference: sale.manualReference,
             type: TransactionType.ADVANCE_USAGE,
             description: `Advance applied to invoice ${invoiceId}`,
             amount: convertedAdvanceApplied,
@@ -625,22 +643,66 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
   };
   
+  const recordPaymentVoucher = async (payload: PaymentVoucherPayload) => {
+      const convertedAmount = convertToUSD(payload.amount);
+      let description = '';
+
+      switch (payload.category) {
+          case 'GENERAL':
+              const expenseAccount = expenseAccounts.find(ea => ea.id === payload.referenceId);
+              description = `General Expense: ${expenseAccount?.name || 'Unknown'}. ${payload.notes || ''}`;
+              break;
+          case 'CLEARING':
+              description = `Payment to Clearing Agent: ${payload.beneficiaryName}. ${payload.notes || ''}`;
+              break;
+          case 'CUSTOMS':
+               description = `Payment for Customs: ${payload.beneficiaryName}. ${payload.notes || ''}`;
+               break;
+          case 'DUTY':
+               description = `Payment to Revenue Authority (Duty). ${payload.notes || ''}`;
+               break;
+          case 'HEAD_OFFICE':
+                description = `Payment to Head Office. ${payload.notes || ''}`;
+                break;
+      }
+
+      const transactionData: any = {
+          shopId: payload.shopId,
+          type: TransactionType.EXPENSE,
+          description,
+          amount: convertedAmount,
+          paymentAccountId: payload.paymentAccountId,
+          date: Timestamp.fromDate(payload.date),
+      };
+
+      if (payload.category === 'GENERAL') {
+          transactionData.expenseAccountId = payload.referenceId;
+      }
+
+      await addDoc(collection(db, 'transactions'), transactionData);
+  };
+
   const addExport = async (data: AddExportPayload) => {
     const batch = writeBatch(db);
     const now = Timestamp.now();
     
-    const shipmentRef = doc(collection(db, 'shipments'));
+    // Use passed shipmentId as the document ID
+    const shipmentRef = doc(db, 'shipments', data.shipmentId);
+
     const newShipment: Omit<Shipment, 'id' | 'date'> = {
       shopId: data.shopId,
       status: ShipmentStatus.PENDING,
       items: data.items.map(item => ({
         productId: item.productId,
         expectedQuantity: item.quantity,
-        landedCost: item.landedCost, // This is now the base Invoice Price
+        landedCost: item.landedCost, // This is the base Invoice Price
       })),
       freightCost: data.freightForwarder.amount,
+      freightForwarderId: data.freightForwarder.id,
       clearingCost: data.clearingAgent.amount,
+      clearingAgentId: data.clearingAgent.id,
       customExpenseCost: data.customExpense.amount,
+      customExpenseTypeId: data.customExpense.typeId,
       expectedDuty: data.expectedDuty,
     };
     batch.set(shipmentRef, {
@@ -650,41 +712,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const HEAD_OFFICE_ACCOUNT_ID = 'HO'; 
 
+    // Only record expense for Freight Forwarder (Paid by HO)
     if (data.freightForwarder.amount > 0 && data.freightForwarder.id) {
       const ff = freightForwarders.find(f => f.id === data.freightForwarder.id);
       const expenseRef = doc(collection(db, 'transactions'));
       batch.set(expenseRef, {
         shopId: HEAD_OFFICE_ACCOUNT_ID,
         type: TransactionType.EXPENSE,
-        description: `Freight Forwarder: ${ff?.name || 'N/A'} for Shipment #${shipmentRef.id}`,
+        description: `Freight Forwarder: ${ff?.name || 'N/A'} for Shipment #${data.shipmentId}`,
         amount: data.freightForwarder.amount,
         date: now,
       });
     }
     
-    if (data.clearingAgent.amount > 0 && data.clearingAgent.id) {
-      const ca = clearingAgents.find(c => c.id === data.clearingAgent.id);
-      const expenseRef = doc(collection(db, 'transactions'));
-      batch.set(expenseRef, {
-        shopId: HEAD_OFFICE_ACCOUNT_ID,
-        type: TransactionType.EXPENSE,
-        description: `Clearing Agent: ${ca?.name || 'N/A'} for Shipment #${shipmentRef.id}`,
-        amount: data.clearingAgent.amount,
-        date: now,
-      });
-    }
-
-    if (data.customExpense.amount > 0 && data.customExpense.typeId) {
-      const cet = customExpenseTypes.find(c => c.id === data.customExpense.typeId);
-      const expenseRef = doc(collection(db, 'transactions'));
-      batch.set(expenseRef, {
-        shopId: HEAD_OFFICE_ACCOUNT_ID,
-        type: TransactionType.EXPENSE,
-        description: `Custom Expense: ${cet?.name || 'N/A'} for Shipment #${shipmentRef.id}`,
-        amount: data.customExpense.amount,
-        date: now,
-      });
-    }
+    // Clearing, Custom Expense, and Duty are NOT recorded as HO Expenses here.
+    // They are estimates passed to the shop. The Shop will pay these upon receipt.
 
     await batch.commit();
   };
@@ -704,43 +746,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         expectedDuty: data.expectedDuty,
     });
 
-    // 2. Update Head Office Expenses (Best Effort Search)
-    // Since we don't have direct linking IDs in the simple transaction schema, we search by description
+    // 2. Update Head Office Expenses (Best Effort Search - Freight Only)
+    // Only Freight is an HO expense now.
     const hoTransactions = transactions.filter(t => t.shopId === 'HO' && t.description.includes(`Shipment #${data.shipmentId}`));
     
     hoTransactions.forEach(t => {
         const tRef = doc(db, 'transactions', t.id);
         if (t.description.includes("Freight Forwarder")) {
             batch.update(tRef, { amount: data.freightCost });
-        } else if (t.description.includes("Clearing Agent")) {
-             batch.update(tRef, { amount: data.clearingCost });
-        } else if (t.description.includes("Custom Expense")) {
-             batch.update(tRef, { amount: data.customExpenseCost });
         }
     });
 
-    // 3. If Stock Received: Recalculate Shop Inventory Value (Landed Cost)
-    if (shipment.status === ShipmentStatus.RECEIVED) {
-        const newTotalOverheads = data.freightCost + data.clearingCost + data.customExpenseCost + data.expectedDuty;
-        const totalShipmentQty = shipment.items.reduce((sum, i) => sum + i.expectedQuantity, 0);
-        const additionalCostPerUnit = totalShipmentQty > 0 ? newTotalOverheads / totalShipmentQty : 0;
-
-        // Find IMPORT transactions related to this shipment
-        const importTransactions = transactions.filter(t => 
-            t.shopId === shipment.shopId && 
-            t.type === TransactionType.IMPORT && 
-            t.description.includes(`Shipment #${data.shipmentId}`)
-        );
-
-        importTransactions.forEach(t => {
-            const originalItem = shipment.items.find(i => i.productId === t.productId);
-            if (originalItem) {
-                const newUnitCost = originalItem.landedCost + additionalCostPerUnit; // Invoice Price + New Overhead Allocation
-                const tRef = doc(db, 'transactions', t.id);
-                batch.update(tRef, { amount: newUnitCost });
-            }
-        });
-    }
+    // 3. If Stock Received: Recalculate Shop Inventory Value 
+    // Note: This is complex with split transactions. For now, we assume updates happen before receipt or trigger a manual adjustment.
+    // A full implementation would need to find the IMPORT (for Freight) and IMPORT_OVERHEAD (for others) transactions and update them.
 
     await batch.commit();
   };
@@ -752,29 +771,57 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const batch = writeBatch(db);
     const now = Timestamp.now();
 
-    // Calculate overheads per unit based on total shipment quantity
-    const totalOverheads = shipment.freightCost + shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty;
     const totalShipmentQty = shipment.items.reduce((sum, i) => sum + i.expectedQuantity, 0);
-    const additionalCostPerUnit = totalShipmentQty > 0 ? totalOverheads / totalShipmentQty : 0;
+    
+    // HO Costs (Billable to Shop)
+    const hoOverheadTotal = shipment.freightCost;
+    const hoOverheadPerUnit = totalShipmentQty > 0 ? hoOverheadTotal / totalShipmentQty : 0;
+
+    // Local Costs (Paid by Shop immediately OR accrued)
+    const localOverheadTotal = shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty;
+    const localOverheadPerUnit = totalShipmentQty > 0 ? localOverheadTotal / totalShipmentQty : 0;
 
     payload.receivedItems.forEach(receivedItem => {
         if (receivedItem.quantity > 0) {
             const originalItem = shipment.items.find(i => i.productId === receivedItem.productId);
             const product = products.find(p => p.id === receivedItem.productId);
+            
             if (originalItem && product) {
-                // Shop Cost = Invoice Price (Landed Cost in Shipment) + Allocated Overhead
-                const finalUnitCost = originalItem.landedCost + additionalCostPerUnit;
+                // 1. Create IMPORT transaction (Liability to HO + Stock Qty)
+                // Value = Product Cost (Invoice) + Freight Allocation
+                const billableUnitCost = originalItem.landedCost + hoOverheadPerUnit;
                 const importRef = doc(collection(db, 'transactions'));
                 batch.set(importRef, {
                     shopId: shipment.shopId,
                     productId: receivedItem.productId,
                     type: TransactionType.IMPORT,
                     description: `Stock from HO - Shipment #${shipment.id}`,
-                    amount: finalUnitCost,
+                    amount: billableUnitCost,
                     quantity: receivedItem.quantity,
                     date: now,
                     locationId: payload.locationId,
                 });
+
+                // 2. Create IMPORT_OVERHEAD transaction (Local Payable + Stock Value Add)
+                // Value = Clearing + Duty + Custom Allocation
+                // Quantity is stored as 0 or processed differently in Inventory to avoid double counting stock, 
+                // but we need to record the *value*. 
+                // To make the ledger work, we record the Total Amount paid for this item line.
+                // Amount per unit is stored in 'amount', Qty is stored in 'quantity'.
+                // NOTE: Removed paymentAccountId, so this acts as an accrued liability (payable)
+                if (localOverheadPerUnit > 0) {
+                    const overheadRef = doc(collection(db, 'transactions'));
+                    batch.set(overheadRef, {
+                        shopId: shipment.shopId,
+                        productId: receivedItem.productId,
+                        type: TransactionType.IMPORT_OVERHEAD,
+                        description: `Landed Cost Adj (Duty/Clearing) - Shipment #${shipment.id}`,
+                        amount: localOverheadPerUnit, 
+                        quantity: receivedItem.quantity, // We store qty to calculate total cost, but inventory calculation must ignore this qty for stock count
+                        date: now,
+                        locationId: payload.locationId,
+                    });
+                }
             }
         }
     });
@@ -930,7 +977,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
     shopAccounts, addShopAccount, getStockLevel, alerts, logAlert, markAlertAsRead,
     warehouses, addWarehouse, transferStock, assets, addAsset,
-    recordAdvance, getAdvanceBalance,
+    recordAdvance, getAdvanceBalance, recordPaymentVoucher,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

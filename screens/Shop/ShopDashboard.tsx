@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import Layout from '../../components/Layout';
 import ShopSidebar from './ShopSidebar';
@@ -12,12 +13,14 @@ import ReceiveStock from './views/ReceiveStock';
 import CustomerManagement from './views/CustomerManagement';
 import AccountManagement from './views/AccountManagement';
 import SalesReturn from './views/SalesReturn';
-import Alerts from './views/Alerts';
 import WarehouseManagement from './views/WarehouseManagement';
 import AssetManagement from './views/AssetManagement';
 import CustomerAdvances from './views/CustomerAdvances';
+import SupplierLedger from './views/SupplierLedger';
+import { ClearingAgentLedger, CustomsLedger, DutyLedger, CashLedger, BankLedger } from './views/ReportLedgers';
+import PaymentVoucher from './views/PaymentVoucher';
 
-export type ShopView = 'dashboard' | 'sales' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'alerts' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances';
+export type ShopView = 'dashboard' | 'sales' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger';
 
 const ShopDashboard: React.FC = () => {
   const [view, setView] = useState<ShopView>('dashboard');
@@ -26,14 +29,26 @@ const ShopDashboard: React.FC = () => {
     switch (view) {
       case 'dashboard':
         return <Dashboard />;
-      case 'alerts':
-        return <Alerts />;
+      case 'supplierLedger':
+        return <SupplierLedger />;
+      case 'clearingAgentLedger':
+        return <ClearingAgentLedger />;
+      case 'customsLedger':
+        return <CustomsLedger />;
+      case 'dutyLedger':
+        return <DutyLedger />;
+      case 'cashLedger':
+        return <CashLedger />;
+      case 'bankLedger':
+        return <BankLedger />;
       case 'receiveStock':
         return <ReceiveStock />;
       case 'sales':
         return <Sales />;
       case 'receiptVoucher':
         return <ReceiptVoucher />;
+      case 'paymentVoucher':
+        return <PaymentVoucher />;
       case 'customerAdvances':
         return <CustomerAdvances />;
       case 'salesReturn':
@@ -62,10 +77,16 @@ const ShopDashboard: React.FC = () => {
   const getTitle = () => {
     switch (view) {
       case 'dashboard': return 'Shop Dashboard';
-      case 'alerts': return 'System Alerts';
+      case 'supplierLedger': return 'Supplier Ledger (Head Office)';
+      case 'clearingAgentLedger': return 'Clearing Agent Report';
+      case 'customsLedger': return 'Customs Report';
+      case 'dutyLedger': return 'Duty Report';
+      case 'cashLedger': return 'Cash Ledgers';
+      case 'bankLedger': return 'Bank Ledgers';
       case 'receiveStock': return 'Receive Stock from HO';
       case 'sales': return 'Sales & Receivables';
       case 'receiptVoucher': return 'Receipt Voucher';
+      case 'paymentVoucher': return 'Payment Voucher';
       case 'customerAdvances': return 'Customer Advances';
       case 'salesReturn': return 'Sales Returns & Claims';
       case 'expenses': return 'Expenses & Payables';

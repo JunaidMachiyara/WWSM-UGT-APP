@@ -49,6 +49,10 @@ const ReceiveStock: React.FC = () => {
         ));
     };
 
+    const getTotalLocalOverheads = (shipment: Shipment) => {
+        return shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty;
+    }
+
     const handleSubmit = () => {
         if (!selectedShipment || !locationId) {
              alert('Please select a location to receive the stock.');
@@ -66,7 +70,7 @@ const ReceiveStock: React.FC = () => {
         logAlert({
             shopId: 'HO', // Target the alert to Head Office (or filter by it later)
             type: AlertType.STOCK_DISCREPANCY, // Reusing existing type or could use a generic 'NOTIFICATION' type
-            message: `Shop "${shopName}" has received Shipment #${selectedShipment.id}. Please review and update actual clearing/customs costs for accurate inventory valuation.`,
+            message: `Shop "${shopName}" has received Shipment #${selectedShipment.id}. Stock added to inventory.`,
             context: { shipmentId: selectedShipment.id, shopId: shopId }
         });
 
@@ -80,6 +84,8 @@ const ReceiveStock: React.FC = () => {
     }
 
     if (selectedShipment) {
+        const localOverheads = getTotalLocalOverheads(selectedShipment);
+
         return (
             <div className="bg-white p-8 rounded-lg shadow-lg max-w-4xl mx-auto">
                 <div className="flex justify-between items-center mb-6">
@@ -88,9 +94,9 @@ const ReceiveStock: React.FC = () => {
                 </div>
 
                 <div className="bg-gray-50 p-4 rounded-lg mb-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-                    <div>
-                        <p className="text-sm text-gray-500">Freight Cost</p>
-                        <p className="font-bold text-lg">${selectedShipment.freightCost.toFixed(2)}</p>
+                    <div className="bg-blue-50 border border-blue-100 rounded p-2">
+                        <p className="text-xs text-gray-500 uppercase">Freight Cost (HO)</p>
+                        <p className="font-bold text-lg text-blue-700">${selectedShipment.freightCost.toFixed(2)}</p>
                     </div>
                      <div>
                         <p className="text-sm text-gray-500">Clearing Cost</p>
@@ -104,9 +110,15 @@ const ReceiveStock: React.FC = () => {
                         <p className="text-sm text-gray-500">Expected Duty</p>
                         <p className="font-bold text-lg">${selectedShipment.expectedDuty.toFixed(2)}</p>
                     </div>
-                    <div className="col-span-full border-t border-gray-200 pt-2 mt-2">
-                        <p className="text-sm text-gray-500">Total Overhead Costs</p>
-                        <p className="font-bold text-xl text-primary">${getTotalOverheads(selectedShipment).toFixed(2)}</p>
+                    <div className="col-span-full border-t border-gray-200 pt-2 mt-2 flex justify-between items-center px-4">
+                         <div>
+                            <p className="text-sm text-gray-500">Total Local Payable (Recorded as Liability)</p>
+                            <p className="font-bold text-xl text-orange-600">${localOverheads.toFixed(2)}</p>
+                        </div>
+                         <div className="text-right">
+                            <p className="text-sm text-gray-500">Total Landed Cost Addition</p>
+                            <p className="font-bold text-xl text-green-600">${getTotalOverheads(selectedShipment).toFixed(2)}</p>
+                        </div>
                     </div>
                 </div>
 
@@ -138,20 +150,24 @@ const ReceiveStock: React.FC = () => {
                         );
                     })}
                 </div>
-                 <div className="mt-8 border-t pt-6">
-                    <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">Receive Stock To:</label>
-                    <select 
-                        id="location" 
-                        value={locationId} 
-                        onChange={e => setLocationId(e.target.value)}
-                        className="w-full md:w-1/2 border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary"
-                    >
-                        {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-                    </select>
+                
+                <div className="mt-8 border-t pt-6 grid grid-cols-1 gap-6">
+                    <div>
+                        <label htmlFor="location" className="block text-sm font-medium text-gray-700 mb-2">Receive Stock To:</label>
+                        <select 
+                            id="location" 
+                            value={locationId} 
+                            onChange={e => setLocationId(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary"
+                        >
+                            {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                        </select>
+                    </div>
                 </div>
+
                 <div className="flex justify-end mt-8">
                     <button onClick={handleSubmit} className="bg-primary hover:bg-primary-dark text-white font-bold py-3 px-8 rounded-lg transition duration-300">
-                        Confirm Receipt & Add to Inventory
+                        Confirm Receipt & Update Inventory
                     </button>
                 </div>
             </div>

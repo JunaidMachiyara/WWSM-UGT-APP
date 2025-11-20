@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { SaleItem } from '../../../context/AppContext';
@@ -45,7 +46,7 @@ const ExclamationIcon: React.FC<ExclamationIconProps> = ({ colorClass = 'text-gr
 
 
 const Sales: React.FC = () => {
-  const { shopId, products, recordSale, customers, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency } = useAppContext();
+  const { shopId, products, recordSale, customers, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
   
   const [items, setItems] = useState<InvoiceItem[]>([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
   const [customerId, setCustomerId] = useState('');
@@ -53,6 +54,8 @@ const Sales: React.FC = () => {
   const [advanceApplied, setAdvanceApplied] = useState(0);
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentAccountId, setPaymentAccountId] = useState('');
+  const [manualRef, setManualRef] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   
   const shopCustomers = customers.filter(c => c.shopId === shopId);
@@ -77,6 +80,43 @@ const Sales: React.FC = () => {
     // Reset advance applied if customer changes
     setAdvanceApplied(0);
   }, [customerId]);
+
+  // Auto-Generate Invoice Number logic
+  useEffect(() => {
+    if (!shopId) return;
+
+    const generateInvoiceNumber = () => {
+        // Format: Sequence + "-" + MMDDYY
+        // e.g., 1001-112025
+        const today = new Date();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const yy = String(today.getFullYear()).slice(-2);
+        const dateSuffix = `${mm}${dd}${yy}`; // MMDDYY
+
+        const salesTransactions = transactions.filter(t => t.shopId === shopId && (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE));
+
+        let maxSeq = 1000;
+        
+        salesTransactions.forEach(t => {
+            if (t.invoiceId) {
+                // Regex to match pattern: (Digits)-(Any suffix)
+                const match = t.invoiceId.match(/^(\d+)-/);
+                if (match && match[1]) {
+                    const seq = parseInt(match[1]);
+                    if (!isNaN(seq) && seq > maxSeq) {
+                        maxSeq = seq;
+                    }
+                }
+            }
+        });
+
+        const nextSeq = maxSeq + 1;
+        return `${nextSeq}-${dateSuffix}`;
+    };
+
+    setInvoiceNumber(generateInvoiceNumber());
+  }, [shopId, transactions, saleDate]); // Recalculate if transactions change (though slight overkill, ensures uniqueness if multi-tab)
 
 
   const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -118,6 +158,7 @@ const Sales: React.FC = () => {
     setAdvanceApplied(0);
     setSaleDate(new Date().toISOString().split('T')[0]);
     setPaymentAccountId('');
+    setManualRef('');
   };
 
   const totalAmount = items.reduce((sum, item) => {
@@ -161,10 +202,8 @@ const Sales: React.FC = () => {
       alert('Cash paid amount cannot be negative.');
       return;
     }
-    if ((cashPaid + advanceApplied) > totalAmount) {
-      alert(`Total payment (cash + advance) cannot exceed the total amount of ${currentShopCurrency.symbol}${totalAmount.toFixed(2)}.`);
-      return;
-    }
+    // Removed validation preventing overpayment as per user request
+    
     if (cashPaid > 0 && !paymentAccountId) {
         alert('Please select an account to deposit the cash payment into.');
         return;
@@ -175,6 +214,8 @@ const Sales: React.FC = () => {
     recordSale({
       shopId,
       customerId,
+      invoiceNumber,
+      manualReference: manualRef,
       items: validItems,
       cashPaid: cashPaid || 0,
       advanceApplied: advanceApplied || 0,
@@ -182,7 +223,7 @@ const Sales: React.FC = () => {
       paymentAccountId,
     });
 
-    setSuccessMessage('Sale recorded successfully!');
+    setSuccessMessage(`Sale recorded successfully! Invoice #${invoiceNumber}`);
     resetForm();
     setTimeout(() => setSuccessMessage(''), 5000);
   };
@@ -196,7 +237,7 @@ const Sales: React.FC = () => {
         </div>
       )}
       <form onSubmit={handleSubmit} className="space-y-8">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
                 <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
                 <select id="customer" value={customerId} onChange={e => setCustomerId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
@@ -207,6 +248,15 @@ const Sales: React.FC = () => {
             <div>
                 <label htmlFor="saleDate" className="block text-sm font-medium text-gray-700">Invoice Date</label>
                 <input type="date" id="saleDate" value={saleDate} onChange={e => setSaleDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required />
+            </div>
+             <div>
+                <label htmlFor="invoiceNumber" className="block text-sm font-medium text-gray-700">Invoice Number</label>
+                <input type="text" id="invoiceNumber" value={invoiceNumber} readOnly className="mt-1 block w-full border border-gray-200 bg-gray-100 rounded-md shadow-sm p-2 text-gray-600 cursor-not-allowed" />
+                <p className="text-xs text-gray-500 mt-1">Auto-generated sequence</p>
+            </div>
+            <div>
+                <label htmlFor="manualRef" className="block text-sm font-medium text-gray-700">Manual Reference (Ref)</label>
+                <input type="text" id="manualRef" value={manualRef} onChange={e => setManualRef(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" placeholder="e.g. Customer PO" />
             </div>
         </div>
 
@@ -227,7 +277,7 @@ const Sales: React.FC = () => {
                     {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
                 </div>
-                <div className="md:col-span-2">
+                <div className="md:col-span-3">
                   <label className="block text-sm font-medium text-gray-700">Dispatch From</label>
                   <select value={item.locationId} onChange={e => handleItemChange(index, 'locationId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" disabled={!item.productId}>
                     {locations.map(loc => {
@@ -312,8 +362,10 @@ const Sales: React.FC = () => {
                     )}
                 </div>
                 <div className="flex justify-between items-center text-lg font-semibold mt-4">
-                     <span className="text-gray-600">Amount on Credit:</span>
-                    <span className="text-red-500">{creditAmount > 0 ? creditAmount.toFixed(2) : '0.00'}</span>
+                     <span className="text-gray-600">Amount on Credit / Change:</span>
+                     <span className={`${creditAmount > 0 ? "text-red-500" : "text-green-600"}`}>
+                        {creditAmount.toFixed(2)}
+                     </span>
                 </div>
             </div>
         </div>

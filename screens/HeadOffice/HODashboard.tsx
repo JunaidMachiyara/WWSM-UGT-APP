@@ -14,8 +14,10 @@ import CustomExpenseSetup from './views/CustomExpenseSetup';
 import ExpenseAccountManagement from './views/ExpenseAccountManagement';
 import CurrencyManagement from './views/CurrencyManagement';
 import HOAlerts from './views/HOAlerts';
+import HOPaymentVoucher from './views/HOPaymentVoucher';
+import HOReceiptVoucher from './views/HOReceiptVoucher';
 
-export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement' | 'alerts';
+export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement' | 'alerts' | 'paymentVoucher' | 'receiptVoucher';
 
 const HODashboard: React.FC = () => {
   const [view, setView] = useState<HOView>('dashboard');
@@ -46,6 +48,10 @@ const HODashboard: React.FC = () => {
         return <CurrencyManagement />;
       case 'alerts':
         return <HOAlerts />;
+      case 'paymentVoucher':
+        return <HOPaymentVoucher />;
+      case 'receiptVoucher':
+        return <HOReceiptVoucher />;
       default:
         return <Dashboard />;
     }
@@ -65,6 +71,8 @@ const HODashboard: React.FC = () => {
       case 'expenseAccountManagement': return 'Expense Account Management';
       case 'currencyManagement': return 'Currency Management';
       case 'alerts': return 'Notifications & Alerts';
+      case 'paymentVoucher': return 'Head Office Payment Voucher';
+      case 'receiptVoucher': return 'Receipt from Shop';
       default: return 'Dashboard';
     }
   };
