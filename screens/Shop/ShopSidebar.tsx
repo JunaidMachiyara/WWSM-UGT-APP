@@ -90,7 +90,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
 
 
   return (
-    <aside className="w-64 bg-white text-gray-800 flex flex-col border-r overflow-y-auto">
+    <aside className="w-64 h-full bg-white text-gray-800 flex flex-col border-r overflow-y-auto">
       <div className="h-20 flex flex-col items-center justify-center border-b text-center px-2 flex-shrink-0">
         <h2 className="text-xl font-bold text-primary">WWSM_UGT</h2>
         <p className="text-sm text-gray-500 truncate">{currentShop?.name}</p>

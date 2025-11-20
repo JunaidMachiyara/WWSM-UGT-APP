@@ -84,7 +84,7 @@ const HOSidebar: React.FC<HOSidebarProps> = ({ activeView, setView }) => {
   const inactiveSubMenuStyle = "text-gray-500 hover:bg-primary-dark hover:text-white";
 
   return (
-    <aside className="w-64 bg-white text-gray-800 flex flex-col border-r overflow-y-auto">
+    <aside className="w-64 h-full bg-white text-gray-800 flex flex-col border-r overflow-y-auto">
       <div className="h-20 flex items-center justify-center border-b flex-shrink-0">
         <h2 className="text-2xl font-bold text-primary">WWSM_UGT</h2>
       </div>
