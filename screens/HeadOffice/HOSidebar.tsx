@@ -22,8 +22,8 @@ const HOSidebar: React.FC<HOSidebarProps> = ({ activeView, setView }) => {
 
   const unreadCount = alerts.filter(a => a.shopId === 'HO' && !a.isRead).length;
 
-  const accountingViewIds = ['paymentVoucher', 'receiptVoucher'];
-  const reportsViewIds = ['performanceAnalysis'];
+  const accountingViewIds = ['paymentVoucher', 'receiptVoucher', 'ledgers'];
+  const reportsViewIds = ['performanceAnalysis', 'itemPerformance'];
   const setupViewIds = [
       'shopManagement', 
       'userManagement', 
@@ -58,10 +58,12 @@ const HOSidebar: React.FC<HOSidebarProps> = ({ activeView, setView }) => {
   const accountingItems = [
     { id: 'paymentVoucher', label: 'Payment Vouchers' },
     { id: 'receiptVoucher', label: 'Receipt from Shop' },
+    { id: 'ledgers', label: 'Shop Ledgers' },
   ];
 
   const reportsItems = [
       { id: 'performanceAnalysis', label: 'Performance Analysis' },
+      { id: 'itemPerformance', label: 'Item Performance Details' },
   ];
 
   const setupItems = [

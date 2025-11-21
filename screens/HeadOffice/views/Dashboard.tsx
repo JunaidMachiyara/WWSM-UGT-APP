@@ -15,7 +15,7 @@ const ProfitIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 
 const ExpenseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
 const LogisticsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>;
 
-type ModalType = 'STOCK' | 'REVENUE' | 'EXPENSE' | 'PROFIT';
+type ModalType = 'STOCK' | 'REVENUE' | 'EXPENSE' | 'PROFIT' | 'SHIPMENTS' | 'ALERTS';
 
 interface DetailModalState {
     isOpen: boolean;
@@ -351,6 +351,83 @@ const Dashboard: React.FC = () => {
            )
       }
 
+      if (type === 'SHIPMENTS') {
+        const pending = shipments.filter(s => s.status === ShipmentStatus.PENDING).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        return (
+             <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                          <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Shop</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Items</th>
+                              <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Total Value</th>
+                          </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                          {pending.map((s) => {
+                              const shopName = shops.find(shop => shop.id === s.shopId)?.name || 'Unknown';
+                              const totalValue = s.items.reduce((acc, item) => acc + (item.landedCost * item.expectedQuantity), 0) + s.freightCost + s.clearingCost + s.customExpenseCost + s.expectedDuty;
+                              return (
+                                  <tr key={s.id}>
+                                      <td className="px-4 py-2 text-sm text-gray-900">#{s.id}</td>
+                                      <td className="px-4 py-2 text-sm text-gray-500">{shopName}</td>
+                                      <td className="px-4 py-2 text-sm text-gray-500">{new Date(s.date).toLocaleDateString()}</td>
+                                      <td className="px-4 py-2 text-sm text-right text-gray-900">{s.items.length}</td>
+                                      <td className="px-4 py-2 text-sm text-right font-bold text-gray-900">${totalValue.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                                  </tr>
+                              );
+                          })}
+                          {pending.length === 0 && <tr><td colSpan={5} className="text-center py-4 text-gray-500">No pending shipments.</td></tr>}
+                      </tbody>
+                  </table>
+              </div>
+        );
+      }
+
+      if (type === 'ALERTS') {
+        const activeAlerts = alerts.filter(a => a.type === AlertType.STOCK_DISCREPANCY && !a.isRead).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+         return (
+             <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                          <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Shop</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Message</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                          </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                          {activeAlerts.map((a) => {
+                              const shopName = shops.find(shop => shop.id === a.shopId)?.name || 'Unknown';
+                              return (
+                                  <tr key={a.id}>
+                                      <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">{new Date(a.date).toLocaleString()}</td>
+                                      <td className="px-4 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">{shopName}</td>
+                                      <td className="px-4 py-2 text-sm text-red-600 font-medium">{a.message}</td>
+                                      <td className="px-4 py-2 text-sm text-gray-500">
+                                          {a.context ? (
+                                              <div className="text-xs">
+                                                  {a.context.invoiceId && <p>Inv: #{a.context.invoiceId}</p>}
+                                                  {a.context.productName && <p>Prod: {a.context.productName}</p>}
+                                                  {a.context.stockQty !== undefined && <p>Stock: {a.context.stockQty}</p>}
+                                              </div>
+                                          ) : '-'}
+                                      </td>
+                                  </tr>
+                              );
+                          })}
+                          {activeAlerts.length === 0 && <tr><td colSpan={4} className="text-center py-4 text-gray-500">No active alerts.</td></tr>}
+                      </tbody>
+                  </table>
+              </div>
+        );
+      }
+
       return null;
   };
 
@@ -432,7 +509,12 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
                  <div className="mt-4">
-                     <button className="text-sm text-orange-600 font-semibold hover:text-orange-800">View Shipments &rarr;</button>
+                     <button 
+                        onClick={() => setModalState({ isOpen: true, type: 'SHIPMENTS', shopId: '', shopName: 'Pending Shipments' })}
+                        className="text-sm text-orange-600 font-semibold hover:text-orange-800"
+                     >
+                         View Shipments &rarr;
+                     </button>
                  </div>
             </div>
 
@@ -448,7 +530,12 @@ const Dashboard: React.FC = () => {
                     </div>
                 </div>
                  <div className="mt-4">
-                     <button className="text-sm text-red-600 font-semibold hover:text-red-800">View Alerts &rarr;</button>
+                     <button 
+                        onClick={() => setModalState({ isOpen: true, type: 'ALERTS', shopId: '', shopName: 'System Alerts' })}
+                        className="text-sm text-red-600 font-semibold hover:text-red-800"
+                     >
+                         View Alerts &rarr;
+                     </button>
                  </div>
             </div>
          </div>
@@ -458,18 +545,18 @@ const Dashboard: React.FC = () => {
       <div>
         <h2 className="text-xl font-bold text-gray-800 mb-4">Analytics & Performance</h2>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            <div className="lg:col-span-2">
+            <div className="lg:col-span-2 h-80">
                  <SalesTrendChart transactions={transactions} />
             </div>
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 h-80">
                  <CategoryDistributionChart transactions={transactions} products={products} />
             </div>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-             <div className="lg:col-span-2">
+             <div className="lg:col-span-2 h-80">
                  <ShopPerformanceChart transactions={transactions} shops={shops} />
             </div>
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-1 h-80">
                  <TopProductsChart transactions={transactions} products={products} />
             </div>
         </div>
@@ -553,6 +640,8 @@ const Dashboard: React.FC = () => {
                               {modalState.type === 'REVENUE' && 'Sales Transactions (Last 30 Days)'}
                               {modalState.type === 'EXPENSE' && 'Expense Breakdown (Last 30 Days)'}
                               {modalState.type === 'PROFIT' && 'Profit & Loss Summary (Last 30 Days)'}
+                              {modalState.type === 'SHIPMENTS' && 'Pending Shipments to Shops'}
+                              {modalState.type === 'ALERTS' && 'Unresolved System Alerts'}
                           </p>
                       </div>
                       <button onClick={() => setModalState(null)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none">&times;</button>
