@@ -43,7 +43,7 @@ const ShopPerformance: React.FC = () => {
         const shopId = shop.id;
         
         // Filter transactions for this shop, date range, and target products
-        const shopTransactions = transactions.filter(t => {
+        const periodTransactions = transactions.filter(t => {
             const tDate = new Date(t.date);
             const from = new Date(fromDate + 'T00:00:00');
             const to = new Date(toDate + 'T23:59:59'); // End of day
@@ -59,16 +59,14 @@ const ShopPerformance: React.FC = () => {
         let totalSalesRevenue = 0;
         let totalCOGS = 0; // Cost of Goods Sold during period
 
-        shopTransactions.forEach(t => {
+        periodTransactions.forEach(t => {
             const qty = t.quantity || 0;
             const product = products.find(p => p.id === t.productId);
             const cost = product?.hoCost || 0;
 
             // Import Value (Received)
             if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN) {
-                // For Imports, we use the transaction amount (which includes freight alloc) or just base HO Cost?
-                // To be consistent with "Worth", let's use HO Cost * Qty to represent the Value brought in.
-                // Using HO Cost is safer for standardization.
+                // Using HO Cost to represent value brought in
                 totalImportValue += (qty * cost);
             }
 
@@ -80,18 +78,12 @@ const ShopPerformance: React.FC = () => {
         });
 
         // 3. Calculate In Hand & Stock Worth (Snapshot - CURRENT state)
-        // Note: "In Hand" is strictly current stock, not historical stock at 'toDate'.
-        // Calculating historical stock requires replaying all transactions from 0. 
-        // Assuming user wants CURRENT stock status alongside Period performance.
+        // This ignores the Date Range because "In Hand" is always "Now".
         
         let currentInHandQty = 0;
         let currentStockWorth = 0;
 
-        // We need to calculate stock for ALL transactions for this shop/product, not just the date range, to get current stock.
-        // Optimization: We can use the getStockLevel helper or manual aggregation. 
-        // Since we are iterating products anyway, let's aggregate.
-        
-        // We must scan ALL transactions for this shop to get accurate current stock
+        // We must scan ALL transactions for this shop (ignoring date) to get accurate current stock
         const allShopTransactions = transactions.filter(t => t.shopId === shopId && t.productId && targetProductIds.has(t.productId));
         
         // Helper map to sum stock per product
@@ -211,8 +203,8 @@ const ShopPerformance: React.FC = () => {
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Import (Cost)</th>
                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Sold (Revenue)</th>
                         <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">In Hand (Qty)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Profit (Sales - Cost)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock in Hand Worth</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Profit ($)</th>
+                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Stock Value (Cost)</th>
                     </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -260,9 +252,8 @@ const ShopPerformance: React.FC = () => {
         </div>
         <div className="mt-4 text-xs text-gray-500 space-y-1">
             <p>* <strong>Date Range:</strong> Applies to Import, Sold, and Sales Profit columns.</p>
-            <p>* <strong>In Hand & Stock Worth:</strong> Represents current real-time inventory, regardless of date selection.</p>
-            <p>* <strong>Total Import:</strong> Based on Head Office Cost of items received (Imports + Returns) in the period.</p>
-            <p>* <strong>Sales Profit:</strong> Net Sales Revenue minus Cost of Goods Sold (COGS) for items sold in the period.</p>
+            <p>* <strong>In Hand & Stock Value:</strong> Represents current real-time inventory, regardless of date selection.</p>
+            <p>* <strong>Sales Profit:</strong> Net Sales Revenue minus Cost of Goods Sold (HO Cost * Qty Sold) for items sold in the period.</p>
         </div>
       </div>
     </div>

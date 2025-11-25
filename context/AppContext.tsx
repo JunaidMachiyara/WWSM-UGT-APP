@@ -14,6 +14,7 @@ import {
   deleteDoc,
   where,
   getDocs,
+  limit,
 } from 'firebase/firestore';
 import { ref, listAll, deleteObject } from 'firebase/storage';
 import { 
@@ -124,6 +125,9 @@ interface AppContextType {
   setRole: (role: UserRole | null) => void;
   shopId: string | null;
   setShopId: (id: string | null) => void;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => void;
+  currentUser: User | null;
   shops: Shop[];
   addShop: (shop: AddShopPayload) => Promise<void>;
   updateShop: (shopId: string, data: Partial<Omit<Shop, 'id'>>) => Promise<void>;
@@ -170,6 +174,8 @@ interface AppContextType {
   recordAdvance: (payload: RecordAdvancePayload) => void;
   getAdvanceBalance: (customerId: string) => number;
   recordPaymentVoucher: (payload: PaymentVoucherPayload) => void;
+  resetSystem: () => Promise<void>;
+  clearTransactions: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -177,6 +183,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [role, setRole] = useState<UserRole | null>(null);
   const [shopId, setShopId] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [shops, setShops] = useState<Shop[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -194,62 +201,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [assets, setAssets] = useState<Asset[]>([]);
 
   useEffect(() => {
-    const cleanupTShops = async () => {
-      try {
-        const shopsRef = collection(db, 'shops');
-        const q = query(shopsRef, where("name", "==", "T"));
-        const querySnapshot = await getDocs(q);
-  
-        if (querySnapshot.empty) {
-          return;
-        }
-        
-        const shopsToDelete = querySnapshot.docs;
-        const numberOfShops = shopsToDelete.length;
-        
-        if (numberOfShops > 0) {
-            const batch = writeBatch(db);
-    
-            const deleteFolderContents = async (path: string) => {
-              const folderRef = ref(storage, path);
-              try {
-                  const res = await listAll(folderRef);
-                  const deleteFilePromises = res.items.map(itemRef => deleteObject(itemRef));
-                  await Promise.all(deleteFilePromises);
-                  const deleteFolderPromises = res.prefixes.map(prefixRef => deleteFolderContents(prefixRef.fullPath));
-                  await Promise.all(deleteFolderPromises);
-              } catch(e: any) {
-                  if (e.code !== 'storage/object-not-found') {
-                      console.error(`Error deleting storage folder ${path}:`, e);
-                  }
-              }
-            };
-    
-            for (const docSnapshot of shopsToDelete) {
-              const shopId = docSnapshot.id;
-              await deleteFolderContents(`shops/${shopId}`);
-              batch.delete(docSnapshot.ref);
-            }
-    
-            await batch.commit();
-    
-            alert(`Cleanup complete: ${numberOfShops} shop(s) with the name "T" have been permanently deleted.`);
-        }
-  
-      } catch (error) {
-        console.error("Error during cleanup of 'T' shops:", error);
-        alert("An error occurred during the data cleanup process. Please check the console for details.");
-      }
-    };
-  
-    cleanupTShops();
-  }, []);
-
-  useEffect(() => {
     const collections: { name: string; setter: Function }[] = [
       { name: 'shops', setter: setShops },
       { name: 'products', setter: setProducts },
-      { name: 'users', setter: setUsers },
       { name: 'customers', setter: setCustomers },
       { name: 'clearingAgents', setter: setClearingAgents },
       { name: 'freightForwarders', setter: setFreightForwarders },
@@ -265,6 +219,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setter(data);
       });
+    });
+
+    // Users Handling (with default admin creation)
+    const qUsers = query(collection(db, 'users'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+        if (snapshot.empty) {
+            // Create default admin if no users exist
+            const defaultAdmin: Omit<User, 'id'> = {
+                name: 'System Administrator',
+                username: 'admin',
+                password: 'admin123', // Simple password for initialization
+                role: UserRole.HEAD_OFFICE
+            };
+            addDoc(collection(db, 'users'), defaultAdmin);
+        } else {
+            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setUsers(data as User[]);
+        }
     });
 
     const qTransactions = query(collection(db, "transactions"));
@@ -343,6 +315,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   
     return () => {
       unsubscribes.forEach(unsub => unsub());
+      unsubUsers();
       unsubTransactions();
       unsubShipments();
       unsubAlerts();
@@ -381,6 +354,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const login = async (username: string, pass: string): Promise<boolean> => {
+      const user = users.find(u => u.username === username && u.password === pass);
+      if (user) {
+          setCurrentUser(user);
+          setRole(user.role);
+          if (user.role === UserRole.SHOP_OPERATOR && user.shopId) {
+              setShopId(user.shopId);
+          } else {
+              setShopId(null); // Head Office has no single shop ID context
+          }
+          return true;
+      }
+      return false;
+  };
+
+  const logout = () => {
+      setCurrentUser(null);
+      setRole(null);
+      setShopId(null);
+  };
+
   const addShop = async (shop: AddShopPayload) => {
     const newShopData = {
       ...shop,
@@ -401,13 +395,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     try {
         const deleteFolderContents = async (path: string) => {
             const folderRef = ref(storage, path);
-            const res = await listAll(folderRef);
-            
-            const deleteFilePromises = res.items.map(itemRef => deleteObject(itemRef));
-            await Promise.all(deleteFilePromises);
-            
-            const deleteFolderPromises = res.prefixes.map(prefixRef => deleteFolderContents(prefixRef.fullPath));
-            await Promise.all(deleteFolderPromises);
+            try {
+                const res = await listAll(folderRef);
+                const deleteFilePromises = res.items.map(itemRef => deleteObject(itemRef));
+                await Promise.all(deleteFilePromises);
+                const deleteFolderPromises = res.prefixes.map(prefixRef => deleteFolderContents(prefixRef.fullPath));
+                await Promise.all(deleteFolderPromises);
+            } catch(e: any) {
+                if (e.code !== 'storage/object-not-found') {
+                    console.error(`Error deleting storage folder ${path}:`, e);
+                }
+            }
         };
         
         await deleteFolderContents(`shops/${shopId}`);
@@ -418,6 +416,67 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         throw error;
     }
   };
+
+  const batchDelete = async (collectionName: string) => {
+      const collectionRef = collection(db, collectionName);
+      const batchSize = 400;
+      
+      while (true) {
+          // Query a batch of documents
+          const q = query(collectionRef, limit(batchSize));
+          const snapshot = await getDocs(q);
+          
+          if (snapshot.empty) {
+              break; // No more documents
+          }
+
+          const batch = writeBatch(db);
+          snapshot.docs.forEach(doc => {
+              batch.delete(doc.ref);
+          });
+
+          await batch.commit();
+          console.log(`Deleted batch of ${snapshot.size} documents from ${collectionName}`);
+      }
+  };
+
+  const resetSystem = async () => {
+    const collections = [
+      'shops', 'products', 'users', 'transactions', 'customers', 
+      'clearingAgents', 'freightForwarders', 'customExpenseTypes', 
+      'expenseAccounts', 'shipments', 'shopAccounts', 'alerts', 
+      'warehouses', 'assets', 'currencies'
+    ];
+
+    try {
+      for (const colName of collections) {
+        console.log(`Starting deletion of collection: ${colName}`);
+        await batchDelete(colName);
+      }
+
+      alert('System reset complete. All data has been cleared. The page will now reload.');
+      window.location.reload();
+
+    } catch (e: any) {
+      console.error("Error resetting system:", e);
+      alert(`Error resetting system: ${e.message}`);
+    }
+  };
+
+  const clearTransactions = async () => {
+      const collections = ['transactions', 'shipments', 'alerts'];
+      try {
+          for (const colName of collections) {
+              console.log(`Starting deletion of collection: ${colName}`);
+              await batchDelete(colName);
+          }
+          alert('All transactions, shipments, and alerts have been cleared. Operational data reset.');
+          window.location.reload();
+      } catch (e: any) {
+          console.error("Error clearing transactions:", e);
+          alert(`Error clearing transactions: ${e.message}`);
+      }
+  }
 
   const addProduct = async (product: Omit<Product, 'id'>) => {
     await addDoc(collection(db, 'products'), product);
@@ -970,14 +1029,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 
   const value = {
-    role, setRole, shopId, setShopId, shops, addShop, updateShop, deleteShop, products, addProduct,
+    role, setRole, shopId, setShopId, login, logout, currentUser, shops, addShop, updateShop, deleteShop, products, addProduct,
     users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, updateShipmentCosts, customers, addCustomer,
     clearingAgents, addClearingAgent, freightForwarders, addFreightForwarder,
     customExpenseTypes, addCustomExpenseType, expenseAccounts, addExpenseAccount,
     shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
     shopAccounts, addShopAccount, getStockLevel, alerts, logAlert, markAlertAsRead,
     warehouses, addWarehouse, transferStock, assets, addAsset,
-    recordAdvance, getAdvanceBalance, recordPaymentVoucher,
+    recordAdvance, getAdvanceBalance, recordPaymentVoucher, resetSystem, clearTransactions
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

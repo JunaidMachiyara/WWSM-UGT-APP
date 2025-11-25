@@ -114,6 +114,8 @@ export interface Product {
 
 export interface User {
   id:string;
+  username: string; // Login ID
+  password?: string; // Simple auth for this demo
   name: string;
   role: UserRole;
   shopId?: string; // Only for SHOP_OPERATOR

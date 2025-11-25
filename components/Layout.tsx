@@ -10,12 +10,11 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ sidebar, children, title }) => {
-  const { role, setRole, setShopId, shops, shopId } = useAppContext();
+  const { role, shops, shopId, logout, currentUser } = useAppContext();
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = () => {
-    setRole(null);
-    setShopId(null);
+    logout();
   };
   
   const currentShopName = role === UserRole.SHOP_OPERATOR ? shops.find(s => s.id === shopId)?.name : 'All Shops';
@@ -61,13 +60,17 @@ const Layout: React.FC<LayoutProps> = ({ sidebar, children, title }) => {
               <h1 className="text-lg md:text-2xl font-bold text-gray-800 truncate leading-tight">{title}</h1>
               <p className="text-xs md:text-sm text-gray-500 truncate">
                 {role === UserRole.HEAD_OFFICE ? 'Head Office View' : `Shop View: ${currentShopName || '...'}`}
+                {currentUser && <span className="ml-2 font-semibold text-primary">({currentUser.name})</span>}
               </p>
             </div>
           </div>
           <button
             onClick={handleLogout}
-            className="bg-red-500 hover:bg-red-600 text-white font-bold py-1.5 px-3 md:py-2 md:px-4 rounded-lg transition duration-300 text-sm md:text-base whitespace-nowrap ml-2 flex-shrink-0"
+            className="bg-red-500 hover:bg-red-600 text-white font-bold py-1.5 px-3 md:py-2 md:px-4 rounded-lg transition duration-300 text-sm md:text-base whitespace-nowrap ml-2 flex-shrink-0 flex items-center"
           >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 md:h-5 md:w-5 mr-1 md:mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
             Logout
           </button>
         </header>

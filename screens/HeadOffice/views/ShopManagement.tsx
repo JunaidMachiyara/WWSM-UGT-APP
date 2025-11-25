@@ -4,7 +4,7 @@ import { useAppContext } from '../../../context/AppContext';
 import { Shop } from '../../../types';
 
 const ShopManagement: React.FC = () => {
-  const { shops, addShop, currencies, updateShop, deleteShop } = useAppContext();
+  const { shops, addShop, currencies, updateShop, deleteShop, resetSystem, clearTransactions } = useAppContext();
   
   // State for creating a new shop
   const [name, setName] = useState('');
@@ -18,6 +18,9 @@ const ShopManagement: React.FC = () => {
   const [editingShop, setEditingShop] = useState<Shop | null>(null);
   const [editFormData, setEditFormData] = useState<Partial<Shop>>({});
   const [updateMessage, setUpdateMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+
+  // Loading state for Danger Zone actions
+  const [isResetting, setIsResetting] = useState(false);
 
 
   const resetForm = () => {
@@ -112,11 +115,33 @@ const ShopManagement: React.FC = () => {
         }
     }
   };
+
+  const handleSystemReset = async () => {
+      if (isResetting) return;
+      
+      if (window.confirm("DANGER: This will delete ALL data (shops, users, products, transactions, etc.). This action cannot be undone. Are you sure you want to wipe the system?")) {
+          if (window.confirm("Please confirm again: DELETE ALL DATA?")) {
+              setIsResetting(true);
+              await resetSystem();
+              setIsResetting(false);
+          }
+      }
+  }
+
+  const handleClearTransactions = async () => {
+      if (isResetting) return;
+
+      if (window.confirm("WARNING: This will delete ALL Transactions, Shipments, and Alerts. Shops, Products, Users, Customers, and Accounts will be KEPT. Are you sure?")) {
+          setIsResetting(true);
+          await clearTransactions();
+          setIsResetting(false);
+      }
+  }
   
   return (
     <>
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-1 bg-white p-6 rounded-lg shadow-lg">
+      <div className="lg:col-span-1 bg-white p-6 rounded-lg shadow-lg h-fit">
         <h3 className="text-xl font-semibold mb-4 text-gray-800">Create New Shop</h3>
         {formMessage && (
             <div className={`p-4 mb-4 text-sm rounded-lg ${formMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`} role="alert">
@@ -150,6 +175,45 @@ const ShopManagement: React.FC = () => {
           </div>
           <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg">Add Shop</button>
         </form>
+        
+        <div className="mt-10 pt-6 border-t border-gray-200 space-y-4">
+            <h4 className="text-lg font-bold text-red-600 mb-2">Danger Zone</h4>
+            <p className="text-xs text-gray-500 mb-2">System Administration Tasks</p>
+            
+            <button 
+                onClick={handleClearTransactions} 
+                disabled={isResetting}
+                className={`w-full text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center ${isResetting ? 'bg-orange-300 cursor-wait' : 'bg-orange-500 hover:bg-orange-600'}`}
+            >
+                {isResetting ? (
+                    <span>Processing...</span>
+                ) : (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Clear Transactions Only
+                    </>
+                )}
+            </button>
+
+            <button 
+                onClick={handleSystemReset} 
+                disabled={isResetting}
+                className={`w-full text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center ${isResetting ? 'bg-red-400 cursor-wait' : 'bg-red-600 hover:bg-red-700'}`}
+            >
+                {isResetting ? (
+                    <span>Processing...</span>
+                ) : (
+                    <>
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        Reset Entire Database
+                    </>
+                )}
+            </button>
+        </div>
       </div>
       <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-lg">
         <h3 className="text-xl font-semibold mb-4 text-gray-800">Existing Shops</h3>
