@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { useAppContext } from './context/AppContext';
 import HODashboard from './screens/HeadOffice/HODashboard';
@@ -5,7 +6,7 @@ import ShopDashboard from './screens/Shop/ShopDashboard';
 import { UserRole } from './types';
 
 const App: React.FC = () => {
-  const { role, login } = useAppContext();
+  const { role, login, shopId, currentUser, shops, switchShop } = useAppContext();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -28,6 +29,9 @@ const App: React.FC = () => {
     }
   };
 
+  // -- VIEW ROUTING LOGIC --
+
+  // 1. Not Logged In
   if (!role) {
     return (
       <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 sm:px-6 lg:px-8">
@@ -116,11 +120,65 @@ const App: React.FC = () => {
     );
   }
 
-  return (
-    <>
-      {role === UserRole.HEAD_OFFICE ? <HODashboard /> : <ShopDashboard />}
-    </>
-  );
+  // 2. Admin Mode - Main Dashboard
+  // If role is HO and no specific shopId is selected (Admin is not "impersonating" a shop)
+  if (role === UserRole.HEAD_OFFICE && !shopId) {
+      return <HODashboard />;
+  }
+
+  // 3. Shop Mode - Selection Screen
+  // If role is OPERATOR (or Admin acting as user eventually?) and NO shop selected yet.
+  if (role === UserRole.SHOP_OPERATOR && !shopId) {
+      const allowed = currentUser?.allowedShopIds || [];
+      const availableShops = shops.filter(s => allowed.includes(s.id) && s.isActive);
+
+      return (
+          <div className="min-h-screen bg-gray-100 p-10">
+              <div className="max-w-4xl mx-auto">
+                  <div className="flex justify-between items-center mb-8">
+                      <div>
+                          <h1 className="text-3xl font-bold text-gray-800">Select a Shop</h1>
+                          <p className="text-gray-600">Welcome back, {currentUser?.name}. Please choose a location.</p>
+                      </div>
+                      <button onClick={() => window.location.reload()} className="text-sm text-gray-500 underline">Logout</button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {availableShops.map(shop => (
+                          <div 
+                              key={shop.id} 
+                              onClick={() => switchShop(shop.id)}
+                              className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all cursor-pointer border-2 border-transparent hover:border-primary transform hover:-translate-y-1"
+                          >
+                              <div className="flex justify-between items-start mb-4">
+                                  <div className="bg-blue-100 p-3 rounded-full text-primary">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                                      </svg>
+                                  </div>
+                                  <span className="text-xs font-bold bg-green-100 text-green-800 px-2 py-1 rounded-full">Active</span>
+                              </div>
+                              <h3 className="text-xl font-bold text-gray-800">{shop.name}</h3>
+                              <p className="text-sm text-gray-500 mt-1">{shop.district}, {shop.country}</p>
+                              <p className="text-xs text-gray-400 mt-4">Currency: {shop.currencyCode}</p>
+                          </div>
+                      ))}
+                      
+                      {availableShops.length === 0 && (
+                          <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
+                              <p className="text-gray-500">You have not been assigned to any active shops. Please contact Head Office.</p>
+                          </div>
+                      )}
+                  </div>
+              </div>
+          </div>
+      )
+  }
+
+  // 4. Shop Dashboard
+  // This renders if (HO + shopId) OR (OP + shopId)
+  // Admin "impersonating" a shop view triggers this.
+  return <ShopDashboard />;
 };
 
 export default App;

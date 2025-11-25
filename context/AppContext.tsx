@@ -127,6 +127,7 @@ interface AppContextType {
   setShopId: (id: string | null) => void;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
+  switchShop: (shopId: string | null) => void;
   currentUser: User | null;
   shops: Shop[];
   addShop: (shop: AddShopPayload) => Promise<void>;
@@ -221,7 +222,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     });
 
-    // Users Handling (with default admin creation)
+    // Users Handling (with default admin creation & Legacy Map)
     const qUsers = query(collection(db, 'users'));
     const unsubUsers = onSnapshot(qUsers, (snapshot) => {
         if (snapshot.empty) {
@@ -230,12 +231,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 name: 'System Administrator',
                 username: 'admin',
                 password: 'admin123', // Simple password for initialization
-                role: UserRole.HEAD_OFFICE
+                role: UserRole.HEAD_OFFICE,
+                allowedShopIds: []
             };
             addDoc(collection(db, 'users'), defaultAdmin);
         } else {
-            const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setUsers(data as User[]);
+            const data = snapshot.docs.map(doc => {
+                const u = doc.data() as User;
+                // Backwards compatibility: if allowedShopIds missing but shopId present, map it
+                if (!u.allowedShopIds && u.shopId) {
+                    u.allowedShopIds = [u.shopId];
+                } else if (!u.allowedShopIds) {
+                    u.allowedShopIds = [];
+                }
+                return { id: doc.id, ...u };
+            });
+            setUsers(data);
         }
     });
 
@@ -326,14 +337,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentShopCurrency = useMemo(() => {
         const defaultCurrency = { id: 'USD', name: 'US Dollar', symbol: '$', rate: 1 };
-        if (role === UserRole.SHOP_OPERATOR && shopId) {
+        // Logic: If shopId is present (Operator or Admin viewing shop), use that shop's currency
+        if (shopId) {
             const currentShop = shops.find(s => s.id === shopId);
             if (currentShop && currentShop.currencyCode) {
                 return currencies.find(c => c.id === currentShop.currencyCode) || defaultCurrency;
             }
         }
+        // Default to USD for Head Office global view
         return currencies.find(c => c.id === 'USD') || defaultCurrency;
-  }, [role, shopId, shops, currencies]);
+  }, [shopId, shops, currencies]);
 
   const convertToUSD = (localAmount: number) => {
     if (!currentShopCurrency || currentShopCurrency.rate === 0 || currentShopCurrency.id === 'USD') {
@@ -359,10 +372,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       if (user) {
           setCurrentUser(user);
           setRole(user.role);
-          if (user.role === UserRole.SHOP_OPERATOR && user.shopId) {
-              setShopId(user.shopId);
+          
+          if (user.role === UserRole.SHOP_OPERATOR) {
+              const accessibleShops = user.allowedShopIds || [];
+              // If user has exactly one shop, auto-enter. 
+              // If multiple, leave shopId null to trigger Selection Screen in App.tsx
+              if (accessibleShops.length === 1) {
+                  setShopId(accessibleShops[0]);
+              } else {
+                  setShopId(null);
+              }
           } else {
-              setShopId(null); // Head Office has no single shop ID context
+              setShopId(null); // Head Office starts at Dashboard
           }
           return true;
       }
@@ -373,6 +394,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       setCurrentUser(null);
       setRole(null);
       setShopId(null);
+  };
+
+  const switchShop = (newShopId: string | null) => {
+      setShopId(newShopId);
   };
 
   const addShop = async (shop: AddShopPayload) => {
@@ -1029,7 +1054,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
 
   const value = {
-    role, setRole, shopId, setShopId, login, logout, currentUser, shops, addShop, updateShop, deleteShop, products, addProduct,
+    role, setRole, shopId, setShopId, login, logout, switchShop, currentUser, shops, addShop, updateShop, deleteShop, products, addProduct,
     users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, updateShipmentCosts, customers, addCustomer,
     clearingAgents, addClearingAgent, freightForwarders, addFreightForwarder,
     customExpenseTypes, addCustomExpenseType, expenseAccounts, addExpenseAccount,

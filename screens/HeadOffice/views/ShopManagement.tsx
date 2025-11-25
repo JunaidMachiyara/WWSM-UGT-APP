@@ -4,7 +4,7 @@ import { useAppContext } from '../../../context/AppContext';
 import { Shop } from '../../../types';
 
 const ShopManagement: React.FC = () => {
-  const { shops, addShop, currencies, updateShop, deleteShop, resetSystem, clearTransactions } = useAppContext();
+  const { shops, addShop, currencies, updateShop, deleteShop, resetSystem, clearTransactions, switchShop } = useAppContext();
   
   // State for creating a new shop
   const [name, setName] = useState('');
@@ -114,6 +114,10 @@ const ShopManagement: React.FC = () => {
             alert("There was an error deleting the shop. Please try again.");
         }
     }
+  };
+
+  const handleAccessShop = (shopId: string) => {
+      switchShop(shopId);
   };
 
   const handleSystemReset = async () => {
@@ -228,7 +232,6 @@ const ShopManagement: React.FC = () => {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Country</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">District</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -243,7 +246,6 @@ const ShopManagement: React.FC = () => {
                     </button>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shop.country}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shop.district}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{shop.currencyCode}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm">
                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${shop.isActive ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -251,13 +253,25 @@ const ShopManagement: React.FC = () => {
                     </span>
                   </td>
                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                            onClick={() => handleDelete(shop)}
-                            className="text-red-600 hover:text-red-900"
-                            aria-label={`Delete ${shop.name}`}
-                        >
-                            Delete
-                        </button>
+                        <div className="flex justify-end space-x-3">
+                            <button 
+                                onClick={() => handleAccessShop(shop.id)}
+                                className="text-blue-600 hover:text-blue-900 flex items-center"
+                                title="Access Shop Dashboard"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                            </button>
+                            <button
+                                onClick={() => handleDelete(shop)}
+                                className="text-red-600 hover:text-red-900"
+                                aria-label={`Delete ${shop.name}`}
+                            >
+                                Delete
+                            </button>
+                        </div>
                     </td>
                 </tr>
               ))}
@@ -278,8 +292,6 @@ const ShopManagement: React.FC = () => {
                 </div>
                 <div className="flex-1 overflow-y-auto p-6 space-y-4">
                     
-                    {/* Image display logic removed as per request to remove image options */}
-
                     <form className="space-y-4">
                         <div>
                             <label htmlFor="editShopName" className="block text-sm font-medium text-gray-700">Shop Name</label>

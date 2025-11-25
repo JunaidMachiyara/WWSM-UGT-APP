@@ -118,7 +118,8 @@ export interface User {
   password?: string; // Simple auth for this demo
   name: string;
   role: UserRole;
-  shopId?: string; // Only for SHOP_OPERATOR
+  shopId?: string; // Deprecated: Single shop ID (Legacy)
+  allowedShopIds?: string[]; // New: Array of accessible shop IDs
 }
 
 export interface Customer {
