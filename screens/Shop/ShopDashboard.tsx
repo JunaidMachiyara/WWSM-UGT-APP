@@ -4,6 +4,7 @@ import Layout from '../../components/Layout';
 import ShopSidebar from './ShopSidebar';
 import Dashboard from './views/Dashboard';
 import Sales from './views/Sales';
+import SalesHistory from './views/SalesHistory';
 import Expenses from './views/Expenses';
 import Inventory from './views/Inventory';
 import IncomeStatement from './views/IncomeStatement';
@@ -21,7 +22,7 @@ import { ClearingAgentLedger, CustomsLedger, DutyLedger, CashLedger, BankLedger 
 import PaymentVoucher from './views/PaymentVoucher';
 import OpeningStock from './views/OpeningStock';
 
-export type ShopView = 'dashboard' | 'sales' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger' | 'openingStock';
+export type ShopView = 'dashboard' | 'sales' | 'salesHistory' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger' | 'openingStock';
 
 const ShopDashboard: React.FC = () => {
   const [view, setView] = useState<ShopView>('dashboard');
@@ -46,6 +47,8 @@ const ShopDashboard: React.FC = () => {
         return <ReceiveStock />;
       case 'sales':
         return <Sales />;
+      case 'salesHistory':
+        return <SalesHistory />;
       case 'receiptVoucher':
         return <ReceiptVoucher />;
       case 'paymentVoucher':
@@ -87,7 +90,8 @@ const ShopDashboard: React.FC = () => {
       case 'cashLedger': return 'Cash Ledgers';
       case 'bankLedger': return 'Bank Ledgers';
       case 'receiveStock': return 'Receive Stock from HO';
-      case 'sales': return 'Sales & Receivables';
+      case 'sales': return 'Record Sales';
+      case 'salesHistory': return 'Sales History & Invoices';
       case 'receiptVoucher': return 'Receipt Voucher';
       case 'paymentVoucher': return 'Payment Voucher';
       case 'customerAdvances': return 'Customer Advances';
