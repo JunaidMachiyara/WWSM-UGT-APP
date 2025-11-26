@@ -36,8 +36,8 @@ const Inventory: React.FC = () => {
 
     transactions.forEach(t => {
         if (t.shopId === shopId && t.productId) {
-             // Cost Calculation Logic
-             if(t.type === TransactionType.IMPORT) {
+             // Cost Calculation Logic (Import & Opening Stock)
+             if(t.type === TransactionType.IMPORT || t.type === TransactionType.OPENING_STOCK) {
                 const locKey = `${t.productId}-${t.locationId || shopId}`;
                 if (!importMap[locKey]) importMap[locKey] = { totalCost: 0, totalQty: 0 };
                 importMap[locKey].totalCost += (t.amount * (t.quantity || 1));
@@ -62,8 +62,8 @@ const Inventory: React.FC = () => {
                 const locKey = `${t.productId}-${t.locationId}`;
                 if (!activityMap[locKey]) activityMap[locKey] = { received: 0, sold: 0 };
 
-                // Received: Imports + Stock Transfers In
-                if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN) {
+                // Received: Imports + Stock Transfers In + Opening Stock
+                if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK) {
                     activityMap[locKey].received += (t.quantity || 0);
                 }
 
@@ -224,7 +224,7 @@ const Inventory: React.FC = () => {
       </div>
       <p className="text-xs text-gray-500 mt-4">* Avg Cost/Unit includes original invoice price plus Allocated Freight (Paid by HO) plus Allocated Duty/Clearing (Paid by Shop).</p>
       <p className="text-xs text-gray-500">* "Total Retail Worth" is calculated based on the Minimum Sale Price. "Total Cost Value" is based on Avg Cost.</p>
-      <p className="text-xs text-gray-500">* "Total Received" includes Imports and Stock Transfers In. "Total Sold" includes Cash and Credit Sales.</p>
+      <p className="text-xs text-gray-500">* "Total Received" includes Imports, Opening Stock, and Stock Transfers In. "Total Sold" includes Cash and Credit Sales.</p>
     </div>
   );
 };

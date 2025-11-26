@@ -46,7 +46,7 @@ const ExclamationIcon: React.FC<ExclamationIconProps> = ({ colorClass = 'text-gr
 
 
 const Sales: React.FC = () => {
-  const { shopId, products, recordSale, customers, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
+  const { shopId, products, recordSale, customers, addCustomer, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
   
   const [items, setItems] = useState<InvoiceItem[]>([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
   const [customerId, setCustomerId] = useState('');
@@ -58,6 +58,11 @@ const Sales: React.FC = () => {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   
+  // Quick Add Customer State
+  const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
+  const [newCustomerPhone, setNewCustomerPhone] = useState('');
+
   const shopCustomers = customers.filter(c => c.shopId === shopId);
   const currentShopAccounts = shopAccounts.filter(acc => acc.shopId === shopId);
 
@@ -116,7 +121,7 @@ const Sales: React.FC = () => {
     };
 
     setInvoiceNumber(generateInvoiceNumber());
-  }, [shopId, transactions, saleDate]); // Recalculate if transactions change (though slight overkill, ensures uniqueness if multi-tab)
+  }, [shopId, transactions, saleDate]); 
 
 
   const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
@@ -202,7 +207,6 @@ const Sales: React.FC = () => {
       alert('Cash paid amount cannot be negative.');
       return;
     }
-    // Removed validation preventing overpayment as per user request
     
     if (cashPaid > 0 && !paymentAccountId) {
         alert('Please select an account to deposit the cash payment into.');
@@ -228,6 +232,30 @@ const Sales: React.FC = () => {
     setTimeout(() => setSuccessMessage(''), 5000);
   };
 
+  const handleQuickAddCustomer = async () => {
+      if (!newCustomerName.trim()) {
+          alert('Customer name is required.');
+          return;
+      }
+      if (!shopId) return;
+
+      try {
+          addCustomer({
+              name: newCustomerName,
+              phone: newCustomerPhone,
+              shopId,
+              reference: 'Quick Add'
+          });
+          
+          setNewCustomerName('');
+          setNewCustomerPhone('');
+          setShowAddCustomerModal(false);
+      } catch (error) {
+          console.error(error);
+          alert('Failed to add customer.');
+      }
+  };
+
   return (
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-7xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Record New Invoice</h2>
@@ -239,24 +267,33 @@ const Sales: React.FC = () => {
       <form onSubmit={handleSubmit} className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
-                <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
-                <select id="customer" value={customerId} onChange={e => setCustomerId(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
+                <div className="flex justify-between items-center mb-1">
+                    <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
+                    <button 
+                        type="button" 
+                        onClick={() => setShowAddCustomerModal(true)} 
+                        className="text-xs text-primary hover:text-blue-800 font-bold hover:underline focus:outline-none"
+                    >
+                        + New Customer
+                    </button>
+                </div>
+                <select id="customer" value={customerId} onChange={e => setCustomerId(e.target.value)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
                     <option value="">Select a customer</option>
                     {shopCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
             </div>
             <div>
-                <label htmlFor="saleDate" className="block text-sm font-medium text-gray-700">Invoice Date</label>
-                <input type="date" id="saleDate" value={saleDate} onChange={e => setSaleDate(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required />
+                <label htmlFor="saleDate" className="block text-sm font-medium text-gray-700 mb-1">Invoice Date</label>
+                <input type="date" id="saleDate" value={saleDate} onChange={e => setSaleDate(e.target.value)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required />
             </div>
              <div>
-                <label htmlFor="invoiceNumber" className="block text-sm font-medium text-gray-700">Invoice Number</label>
-                <input type="text" id="invoiceNumber" value={invoiceNumber} readOnly className="mt-1 block w-full border border-gray-200 bg-gray-100 rounded-md shadow-sm p-2 text-gray-600 cursor-not-allowed" />
+                <label htmlFor="invoiceNumber" className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
+                <input type="text" id="invoiceNumber" value={invoiceNumber} readOnly className="block w-full border border-gray-200 bg-gray-100 rounded-md shadow-sm p-2 text-gray-600 cursor-not-allowed" />
                 <p className="text-xs text-gray-500 mt-1">Auto-generated sequence</p>
             </div>
             <div>
-                <label htmlFor="manualRef" className="block text-sm font-medium text-gray-700">Manual Reference (Ref)</label>
-                <input type="text" id="manualRef" value={manualRef} onChange={e => setManualRef(e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" placeholder="e.g. Customer PO" />
+                <label htmlFor="manualRef" className="block text-sm font-medium text-gray-700 mb-1">Manual Reference (Ref)</label>
+                <input type="text" id="manualRef" value={manualRef} onChange={e => setManualRef(e.target.value)} className="block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" placeholder="e.g. Customer PO" />
             </div>
         </div>
 
@@ -376,6 +413,55 @@ const Sales: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Quick Add Customer Modal */}
+      {showAddCustomerModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md transform transition-all">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 className="text-lg font-bold text-gray-800">Create New Customer</h3>
+                    <button onClick={() => setShowAddCustomerModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                        <input 
+                            type="text" 
+                            value={newCustomerName} 
+                            onChange={e => setNewCustomerName(e.target.value)} 
+                            className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
+                            autoFocus 
+                            placeholder="Enter customer name"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Phone Number (Optional)</label>
+                        <input 
+                            type="text" 
+                            value={newCustomerPhone} 
+                            onChange={e => setNewCustomerPhone(e.target.value)} 
+                            className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                            placeholder="Enter phone number"
+                        />
+                    </div>
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <button 
+                            onClick={() => setShowAddCustomerModal(false)} 
+                            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handleQuickAddCustomer} 
+                            className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
+                        >
+                            Save Customer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,7 +24,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   const isLedgersActive = ['supplierLedger', 'clearingAgentLedger', 'customsLedger', 'dutyLedger', 'reports-ledgers', 'cashLedger', 'bankLedger'].includes(activeView);
   const isReportsActive = activeView.startsWith('reports-') || ['inventory'].includes(activeView) || isLedgersActive;
   const isAccountingActive = ['receiptVoucher', 'paymentVoucher', 'salesReturn', 'accountManagement', 'expenses', 'customerAdvances'].includes(activeView);
-  const isSetupActive = ['customerManagement', 'warehouseManagement', 'assetManagement'].includes(activeView);
+  const isSetupActive = ['customerManagement', 'warehouseManagement', 'assetManagement', 'openingStock'].includes(activeView);
 
   const [reportsOpen, setReportsOpen] = useState(isReportsActive);
   const [ledgersOpen, setLedgersOpen] = useState(isLedgersActive);
@@ -73,6 +73,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   ];
 
   const setupItems = [
+      { id: 'openingStock' as ShopView, label: 'Opening Stock' },
       { id: 'customerManagement' as ShopView, label: 'Customers' },
       { id: 'warehouseManagement' as ShopView, label: 'Warehouse Mgt' },
       { id: 'assetManagement' as ShopView, label: 'Asset Management' },

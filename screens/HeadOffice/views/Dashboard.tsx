@@ -72,7 +72,7 @@ const Dashboard: React.FC = () => {
       transactions.forEach(t => {
           if (t.productId && t.quantity) {
               if (!stockMap[t.productId]) stockMap[t.productId] = 0;
-              if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN) {
+              if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK) {
                   stockMap[t.productId] += t.quantity;
               }
               if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
@@ -135,7 +135,7 @@ const Dashboard: React.FC = () => {
              if (!stockMap[t.locationId]) stockMap[t.locationId] = {};
              const qty = t.quantity || 0;
              
-             if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN) {
+             if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK) {
                  stockMap[t.locationId][t.productId] = (stockMap[t.locationId][t.productId] || 0) + qty;
              } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
                  stockMap[t.locationId][t.productId] = (stockMap[t.locationId][t.productId] || 0) - qty;
@@ -193,7 +193,7 @@ const Dashboard: React.FC = () => {
           transactions.forEach(t => {
               if (t.productId && t.locationId && relevantLocIds.includes(t.locationId)) {
                   const qty = t.quantity || 0;
-                  if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN) {
+                  if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK) {
                       productStock[t.productId] = (productStock[t.productId] || 0) + qty;
                   } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
                       productStock[t.productId] = (productStock[t.productId] || 0) - qty;

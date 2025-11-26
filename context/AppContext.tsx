@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { db, storage } from '../firebase';
 import {
@@ -119,6 +118,16 @@ export interface PaymentVoucherPayload {
     notes?: string;
 }
 
+export interface OpeningStockPayload {
+    shopId: string;
+    productId: string;
+    locationId: string;
+    quantity: number;
+    unitCost: number; // in local currency
+    date: Date;
+    notes?: string;
+}
+
 
 interface AppContextType {
   role: UserRole | null;
@@ -135,6 +144,7 @@ interface AppContextType {
   deleteShop: (shopId: string) => Promise<void>;
   products: Product[];
   addProduct: (product: Omit<Product, 'id'>) => void;
+  bulkAddProducts: (products: Omit<Product, 'id'>[]) => Promise<void>;
   users: User[];
   addUser: (user: Omit<User, 'id'>) => void;
   transactions: Transaction[];
@@ -175,6 +185,8 @@ interface AppContextType {
   recordAdvance: (payload: RecordAdvancePayload) => void;
   getAdvanceBalance: (customerId: string) => number;
   recordPaymentVoucher: (payload: PaymentVoucherPayload) => void;
+  addOpeningStock: (payload: OpeningStockPayload) => Promise<void>;
+  bulkAddOpeningStock: (items: OpeningStockPayload[]) => Promise<void>;
   resetSystem: () => Promise<void>;
   clearTransactions: () => Promise<void>;
 }
@@ -507,6 +519,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await addDoc(collection(db, 'products'), product);
   };
 
+  const bulkAddProducts = async (newProducts: Omit<Product, 'id'>[]) => {
+      const batchSize = 400;
+      // Process in chunks to respect Firestore batch limit (500)
+      for (let i = 0; i < newProducts.length; i += batchSize) {
+          const batch = writeBatch(db);
+          const chunk = newProducts.slice(i, i + batchSize);
+          
+          chunk.forEach(prod => {
+              const docRef = doc(collection(db, 'products'));
+              batch.set(docRef, prod);
+          });
+          
+          await batch.commit();
+          console.log(`Committed batch of ${chunk.length} products.`);
+      }
+  };
+
   const addUser = async (user: Omit<User, 'id'>) => {
     await addDoc(collection(db, 'users'), user);
   };
@@ -521,7 +550,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const productTransactions = transactions.filter(t => t.productId === productId);
 
     const inflows = productTransactions
-      .filter(t => t.locationId === locationId && (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN))
+      .filter(t => t.locationId === locationId && (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK))
       .reduce((sum, t) => sum + (t.quantity || 0), 0);
     
     const outflows = productTransactions
@@ -1052,16 +1081,56 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await batch.commit();
   };
 
+  const addOpeningStock = async (payload: OpeningStockPayload) => {
+      const convertedCost = convertToUSD(payload.unitCost);
+      await addDoc(collection(db, 'transactions'), {
+          shopId: payload.shopId,
+          productId: payload.productId,
+          type: TransactionType.OPENING_STOCK,
+          description: payload.notes || 'Opening Stock Adjustment',
+          amount: convertedCost, // Per Unit Cost in Base Currency
+          quantity: payload.quantity,
+          date: Timestamp.fromDate(payload.date),
+          locationId: payload.locationId
+      });
+  };
+
+  const bulkAddOpeningStock = async (items: OpeningStockPayload[]) => {
+      const batchSize = 400;
+      for (let i = 0; i < items.length; i += batchSize) {
+          const batch = writeBatch(db);
+          const chunk = items.slice(i, i + batchSize);
+          
+          chunk.forEach(item => {
+              const convertedCost = convertToUSD(item.unitCost);
+              const docRef = doc(collection(db, 'transactions'));
+              batch.set(docRef, {
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  type: TransactionType.OPENING_STOCK,
+                  description: item.notes || 'Opening Stock Adjustment (Bulk)',
+                  amount: convertedCost,
+                  quantity: item.quantity,
+                  date: Timestamp.fromDate(item.date),
+                  locationId: item.locationId
+              });
+          });
+          
+          await batch.commit();
+          console.log(`Committed batch of ${chunk.length} opening stock entries.`);
+      }
+  };
+
 
   const value = {
-    role, setRole, shopId, setShopId, login, logout, switchShop, currentUser, shops, addShop, updateShop, deleteShop, products, addProduct,
+    role, setRole, shopId, setShopId, login, logout, switchShop, currentUser, shops, addShop, updateShop, deleteShop, products, addProduct, bulkAddProducts,
     users, addUser, transactions, recordSale, recordPayment, recordSalesReturn, addExpense, addExport, updateShipmentCosts, customers, addCustomer,
     clearingAgents, addClearingAgent, freightForwarders, addFreightForwarder,
     customExpenseTypes, addCustomExpenseType, expenseAccounts, addExpenseAccount,
     shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
     shopAccounts, addShopAccount, getStockLevel, alerts, logAlert, markAlertAsRead,
     warehouses, addWarehouse, transferStock, assets, addAsset,
-    recordAdvance, getAdvanceBalance, recordPaymentVoucher, resetSystem, clearTransactions
+    recordAdvance, getAdvanceBalance, recordPaymentVoucher, addOpeningStock, bulkAddOpeningStock, resetSystem, clearTransactions
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

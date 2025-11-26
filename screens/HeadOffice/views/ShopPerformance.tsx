@@ -65,7 +65,7 @@ const ShopPerformance: React.FC = () => {
             const cost = product?.hoCost || 0;
 
             // Import Value (Received)
-            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN) {
+            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
                 // Using HO Cost to represent value brought in
                 totalImportValue += (qty * cost);
             }
@@ -91,7 +91,7 @@ const ShopPerformance: React.FC = () => {
         
         allShopTransactions.forEach(t => {
             const qty = t.quantity || 0;
-            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN) {
+            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
                 productStockMap[t.productId!] = (productStockMap[t.productId!] || 0) + qty;
             }
             if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {

@@ -43,8 +43,8 @@ const ItemPerformance: React.FC = () => {
         productTransactions.forEach(t => {
             const qty = t.quantity || 0;
             
-            // Received: Imports (from HO), Transfers In, Sales Returns
-            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN) {
+            // Received: Imports (from HO), Transfers In, Sales Returns, Opening Stock
+            if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
                 qtyReceived += qty;
             }
 
@@ -62,7 +62,7 @@ const ItemPerformance: React.FC = () => {
             
         productTransactions.forEach(t => {
              const qty = t.quantity || 0;
-             if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN) {
+             if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
                  totalInflows += qty;
              }
              if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
@@ -201,7 +201,7 @@ const ItemPerformance: React.FC = () => {
             </table>
         </div>
         <p className="text-xs text-gray-500 mt-4">
-            * <strong>Qty Received</strong>: Includes Imports, Transfers In, and Sales Returns.<br/>
+            * <strong>Qty Received</strong>: Includes Imports, Transfers In, Sales Returns, and Opening Stock.<br/>
             * <strong>Qty Sold</strong>: Includes Cash and Credit Sales only.<br/>
             * <strong>Sales Profit</strong>: Total Sales Revenue minus Cost of Goods Sold (HO Cost * Qty Sold).<br/>
             * <strong>Stock Worth</strong>: Valued at Head Office Cost Price (Base Currency).
@@ -212,4 +212,3 @@ const ItemPerformance: React.FC = () => {
 };
 
 export default ItemPerformance;
-    

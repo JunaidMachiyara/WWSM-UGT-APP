@@ -19,8 +19,9 @@ import CustomerAdvances from './views/CustomerAdvances';
 import SupplierLedger from './views/SupplierLedger';
 import { ClearingAgentLedger, CustomsLedger, DutyLedger, CashLedger, BankLedger } from './views/ReportLedgers';
 import PaymentVoucher from './views/PaymentVoucher';
+import OpeningStock from './views/OpeningStock';
 
-export type ShopView = 'dashboard' | 'sales' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger';
+export type ShopView = 'dashboard' | 'sales' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger' | 'openingStock';
 
 const ShopDashboard: React.FC = () => {
   const [view, setView] = useState<ShopView>('dashboard');
@@ -69,6 +70,8 @@ const ShopDashboard: React.FC = () => {
         return <IncomeStatement />;
       case 'reports-ledgers':
         return <Ledgers />;
+      case 'openingStock':
+        return <OpeningStock />;
       default:
         return <Dashboard />;
     }
@@ -97,6 +100,7 @@ const ShopDashboard: React.FC = () => {
       case 'accountManagement': return 'Cash & Bank Accounts';
       case 'reports-income': return 'Income Statement';
       case 'reports-ledgers': return 'Customer Ledgers';
+      case 'openingStock': return 'Add Old Stock (Opening)';
       default: return 'Dashboard';
     }
   };

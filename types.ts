@@ -23,6 +23,7 @@ export enum TransactionType {
   STOCK_TRANSFER_OUT = 'STOCK_TRANSFER_OUT',
   CUSTOMER_ADVANCE = 'CUSTOMER_ADVANCE',
   ADVANCE_USAGE = 'ADVANCE_USAGE',
+  OPENING_STOCK = 'OPENING_STOCK',
 }
 
 export enum ShipmentStatus {
