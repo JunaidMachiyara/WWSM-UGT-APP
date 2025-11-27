@@ -128,6 +128,12 @@ export interface OpeningStockPayload {
     notes?: string;
 }
 
+export interface ReceivedExtraItem {
+  productId: string;
+  quantity: number;
+  unitCost: number; // in local currency
+  notes?: string;
+}
 
 interface AppContextType {
   role: UserRole | null;
@@ -165,7 +171,7 @@ interface AppContextType {
   expenseAccounts: ExpenseAccount[];
   addExpenseAccount: (account: Omit<ExpenseAccount, 'id'>) => void;
   shipments: Shipment[];
-  receiveShipment: (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[], locationId: string }) => void;
+  receiveShipment: (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[], locationId: string, extraItems?: ReceivedExtraItem[] }) => void;
   currencies: Currency[];
   updateCurrency: (currency: Pick<Currency, 'id' | 'rate'>) => void;
   addCurrency: (currency: Currency) => Promise<void>;
@@ -877,7 +883,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     await batch.commit();
   };
 
-  const receiveShipment = async (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[]; locationId: string }) => {
+  const receiveShipment = async (payload: { shipmentId: string; receivedItems: { productId: string; quantity: number }[], locationId: string, extraItems?: ReceivedExtraItem[] }) => {
     const shipment = shipments.find(s => s.id === payload.shipmentId);
     if (!shipment) return;
 
@@ -936,6 +942,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                     });
                 }
             }
+        }
+    });
+
+    // Handle extra items not on the original manifest
+    payload.extraItems?.forEach(extraItem => {
+        const product = products.find(p => p.id === extraItem.productId);
+        if (product && extraItem.quantity > 0 && extraItem.unitCost >= 0) {
+            const convertedUnitCost = convertToUSD(extraItem.unitCost);
+            const extraImportRef = doc(collection(db, 'transactions'));
+            batch.set(extraImportRef, {
+                shopId: shipment.shopId,
+                productId: extraItem.productId,
+                type: TransactionType.IMPORT, // Treat as a direct import
+                description: `Extra item received: ${product.name} (Shipment #${shipment.id})`,
+                amount: convertedUnitCost,
+                quantity: extraItem.quantity,
+                date: now,
+                locationId: payload.locationId,
+                notes: extraItem.notes,
+            });
         }
     });
 

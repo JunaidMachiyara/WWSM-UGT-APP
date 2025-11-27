@@ -149,7 +149,6 @@ const SalesHistory: React.FC = () => {
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Paid</th>
                                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Balance</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -157,7 +156,12 @@ const SalesHistory: React.FC = () => {
                                 <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(inv.date).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                        {inv.id}
+                                        <button 
+                                            onClick={() => setSelectedInvoice(inv)}
+                                            className="text-primary hover:text-primary-dark font-medium underline text-left"
+                                        >
+                                            {inv.id}
+                                        </button>
                                         {inv.reference && <span className="block text-xs text-gray-400">Ref: {inv.reference}</span>}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{inv.customerName}</td>
@@ -172,18 +176,10 @@ const SalesHistory: React.FC = () => {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-semibold text-gray-900">{formatCurrency(inv.totalAmount)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600">{formatCurrency(inv.paidAmount)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-bold">{formatCurrency(inv.balance)}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium">
-                                        <button 
-                                            onClick={() => setSelectedInvoice(inv)}
-                                            className="text-primary hover:text-primary-dark bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded transition-colors"
-                                        >
-                                            View Details
-                                        </button>
-                                    </td>
                                 </tr>
                             )) : (
                                 <tr>
-                                    <td colSpan={8} className="px-6 py-10 text-center text-gray-500">No invoices found for the selected period.</td>
+                                    <td colSpan={7} className="px-6 py-10 text-center text-gray-500">No invoices found for the selected period.</td>
                                 </tr>
                             )}
                         </tbody>
