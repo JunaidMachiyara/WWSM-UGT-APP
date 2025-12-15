@@ -6,7 +6,7 @@ import ShopDashboard from './screens/Shop/ShopDashboard';
 import { UserRole } from './types';
 
 const App: React.FC = () => {
-  const { role, login, shopId, currentUser, shops, switchShop } = useAppContext();
+  const { role, login, shopId, currentUser, shops, switchShop, connectionError, isDemoMode } = useAppContext();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -42,7 +42,24 @@ const App: React.FC = () => {
             <p className="mt-2 text-sm text-gray-500">Please sign in to access your dashboard</p>
           </div>
           
-          {error && (
+          {connectionError && (
+             <div className="bg-orange-50 border-l-4 border-orange-500 p-4 rounded-md">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <svg className="h-5 w-5 text-orange-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.22 3.008-1.742 3.008H4.42c-1.522 0-2.492-1.674-1.742-3.008l5.58-9.92zM10 13a1 1 0 110-2 1 1 0 010 2zm-1-8a1 1 0 00-1 1v3a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm text-orange-800 font-bold">System Warning</p>
+                  <p className="text-sm text-orange-700">{connectionError}</p>
+                  <p className="text-xs mt-1 font-semibold">You may proceed to login with default credentials.</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {error && !connectionError && (
             <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-md">
               <div className="flex">
                 <div className="flex-shrink-0">
@@ -107,7 +124,7 @@ const App: React.FC = () => {
                     </svg>
                   </span>
                 )}
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? 'Signing in...' : (isDemoMode ? 'Login (Demo Mode)' : 'Sign in')}
               </button>
             </div>
           </form>

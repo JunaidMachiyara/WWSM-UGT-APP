@@ -1,3 +1,4 @@
+
 import React, { createContext, useState, useContext, ReactNode, useEffect, useMemo } from 'react';
 import { db, storage } from '../firebase';
 import {
@@ -195,6 +196,8 @@ interface AppContextType {
   bulkAddOpeningStock: (items: OpeningStockPayload[]) => Promise<void>;
   resetSystem: () => Promise<void>;
   clearTransactions: () => Promise<void>;
+  connectionError: string | null;
+  isDemoMode: boolean;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -218,6 +221,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
     const collections: { name: string; setter: Function }[] = [
@@ -237,6 +242,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return onSnapshot(q, (querySnapshot) => {
         const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setter(data);
+        if (name === 'shops' && data.length > 0) setConnectionError(null);
+      }, (error) => {
+          console.error(`Error fetching collection ${name}:`, error);
+          if (error.code === 'permission-denied') {
+              setConnectionError("Database permissions denied. Switched to DEMO MODE (Local Only).");
+              setIsDemoMode(true);
+              
+              // Seed mock data for visual testing if DB is locked
+              if (name === 'shops') {
+                  setShops([{ id: 'demo-shop', name: 'Demo Shop (Offline)', currencyCode: 'USD', country: 'Demo Land', district: 'Local', address: '123 Demo St', isActive: true, shopImageUrls: [], surroundingsImageUrls: [] }]);
+              }
+          } else {
+              setConnectionError(`Error connecting to database (${name}): ${error.message}`);
+          }
       });
     });
 
@@ -248,15 +267,20 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             const defaultAdmin: Omit<User, 'id'> = {
                 name: 'System Administrator',
                 username: 'admin',
-                password: 'admin123', // Simple password for initialization
+                password: 'admin123',
                 role: UserRole.HEAD_OFFICE,
                 allowedShopIds: []
             };
-            addDoc(collection(db, 'users'), defaultAdmin);
+            addDoc(collection(db, 'users'), defaultAdmin).catch(err => {
+                console.error("Failed to create default admin:", err);
+                if (err.code === 'permission-denied') {
+                    setConnectionError("Database permissions denied. Switched to DEMO MODE.");
+                    setIsDemoMode(true);
+                }
+            });
         } else {
             const data = snapshot.docs.map(doc => {
                 const u = doc.data() as User;
-                // Backwards compatibility: if allowedShopIds missing but shopId present, map it
                 if (!u.allowedShopIds && u.shopId) {
                     u.allowedShopIds = [u.shopId];
                 } else if (!u.allowedShopIds) {
@@ -265,7 +289,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 return { id: doc.id, ...u };
             });
             setUsers(data);
+            setConnectionError(null);
         }
+    }, (error) => {
+        console.error("Error fetching users:", error);
+        setConnectionError("Database permissions denied. Login available in DEMO MODE.");
+        setIsDemoMode(true);
     });
 
     const qTransactions = query(collection(db, "transactions"));
@@ -334,11 +363,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 const docRef = doc(db, "currencies", currency.id);
                 batch.set(docRef, { name: currency.name, symbol: currency.symbol, rate: currency.rate });
             });
-            batch.commit();
+            batch.commit().catch(() => {}); // Ignore error in demo mode
             setCurrencies(initialCurrencies);
         } else {
             const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Currency));
             setCurrencies(data);
+        }
+    }, (error) => {
+        if (error.code === 'permission-denied') {
+             setCurrencies([
+                { id: 'USD', name: 'US Dollar', symbol: '$', rate: 1 },
+                { id: 'UGX', name: 'Ugandan Shilling', symbol: 'UGX ', rate: 3850 }
+            ]);
         }
     });
   
@@ -355,14 +391,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     const currentShopCurrency = useMemo(() => {
         const defaultCurrency = { id: 'USD', name: 'US Dollar', symbol: '$', rate: 1 };
-        // Logic: If shopId is present (Operator or Admin viewing shop), use that shop's currency
         if (shopId) {
             const currentShop = shops.find(s => s.id === shopId);
             if (currentShop && currentShop.currencyCode) {
                 return currencies.find(c => c.id === currentShop.currencyCode) || defaultCurrency;
             }
         }
-        // Default to USD for Head Office global view
         return currencies.find(c => c.id === 'USD') || defaultCurrency;
   }, [shopId, shops, currencies]);
 
@@ -386,22 +420,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const login = async (username: string, pass: string): Promise<boolean> => {
-      const user = users.find(u => u.username === username && u.password === pass);
+      let user = users.find(u => u.username === username && u.password === pass);
+      
+      // FALLBACK: If connection error or empty users (DB issues), allow default admin for Demo
+      if (!user && (connectionError || users.length === 0) && username === 'admin' && pass === 'admin123') {
+          user = { 
+              id: 'demo-admin', 
+              name: 'System Administrator (Demo)', 
+              username: 'admin', 
+              role: UserRole.HEAD_OFFICE, 
+              allowedShopIds: [] 
+          };
+      }
+
       if (user) {
           setCurrentUser(user);
           setRole(user.role);
           
           if (user.role === UserRole.SHOP_OPERATOR) {
               const accessibleShops = user.allowedShopIds || [];
-              // If user has exactly one shop, auto-enter. 
-              // If multiple, leave shopId null to trigger Selection Screen in App.tsx
               if (accessibleShops.length === 1) {
                   setShopId(accessibleShops[0]);
               } else {
                   setShopId(null);
               }
           } else {
-              setShopId(null); // Head Office starts at Dashboard
+              setShopId(null); 
           }
           return true;
       }
@@ -507,13 +551,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const clearTransactions = async () => {
+      // Only delete operational data
       const collections = ['transactions', 'shipments', 'alerts'];
       try {
           for (const colName of collections) {
               console.log(`Starting deletion of collection: ${colName}`);
               await batchDelete(colName);
           }
-          alert('All transactions, shipments, and alerts have been cleared. Operational data reset.');
+          alert('All transactions, shipments, and alerts have been cleared. Accounts, Items, Users, and Shops remain intact.');
           window.location.reload();
       } catch (e: any) {
           console.error("Error clearing transactions:", e);
@@ -527,7 +572,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const bulkAddProducts = async (newProducts: Omit<Product, 'id'>[]) => {
       const batchSize = 400;
-      // Process in chunks to respect Firestore batch limit (500)
       for (let i = 0; i < newProducts.length; i += batchSize) {
           const batch = writeBatch(db);
           const chunk = newProducts.slice(i, i + batchSize);
@@ -844,9 +888,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       });
     }
     
-    // Clearing, Custom Expense, and Duty are NOT recorded as HO Expenses here.
-    // They are estimates passed to the shop. The Shop will pay these upon receipt.
-
     await batch.commit();
   };
 
@@ -866,7 +907,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     });
 
     // 2. Update Head Office Expenses (Best Effort Search - Freight Only)
-    // Only Freight is an HO expense now.
     const hoTransactions = transactions.filter(t => t.shopId === 'HO' && t.description.includes(`Shipment #${data.shipmentId}`));
     
     hoTransactions.forEach(t => {
@@ -875,10 +915,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             batch.update(tRef, { amount: data.freightCost });
         }
     });
-
-    // 3. If Stock Received: Recalculate Shop Inventory Value 
-    // Note: This is complex with split transactions. For now, we assume updates happen before receipt or trigger a manual adjustment.
-    // A full implementation would need to find the IMPORT (for Freight) and IMPORT_OVERHEAD (for others) transactions and update them.
 
     await batch.commit();
   };
@@ -907,7 +943,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             
             if (originalItem && product) {
                 // 1. Create IMPORT transaction (Liability to HO + Stock Qty)
-                // Value = Product Cost (Invoice) + Freight Allocation
                 const billableUnitCost = originalItem.landedCost + hoOverheadPerUnit;
                 const importRef = doc(collection(db, 'transactions'));
                 batch.set(importRef, {
@@ -922,12 +957,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                 });
 
                 // 2. Create IMPORT_OVERHEAD transaction (Local Payable + Stock Value Add)
-                // Value = Clearing + Duty + Custom Allocation
-                // Quantity is stored as 0 or processed differently in Inventory to avoid double counting stock, 
-                // but we need to record the *value*. 
-                // To make the ledger work, we record the Total Amount paid for this item line.
-                // Amount per unit is stored in 'amount', Qty is stored in 'quantity'.
-                // NOTE: Removed paymentAccountId, so this acts as an accrued liability (payable)
                 if (localOverheadPerUnit > 0) {
                     const overheadRef = doc(collection(db, 'transactions'));
                     batch.set(overheadRef, {
@@ -936,7 +965,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
                         type: TransactionType.IMPORT_OVERHEAD,
                         description: `Landed Cost Adj (Duty/Clearing) - Shipment #${shipment.id}`,
                         amount: localOverheadPerUnit, 
-                        quantity: receivedItem.quantity, // We store qty to calculate total cost, but inventory calculation must ignore this qty for stock count
+                        quantity: receivedItem.quantity, 
                         date: now,
                         locationId: payload.locationId,
                     });
@@ -1156,7 +1185,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     shipments, receiveShipment, currencies, updateCurrency, addCurrency, currentShopCurrency, formatCurrency,
     shopAccounts, addShopAccount, getStockLevel, alerts, logAlert, markAlertAsRead,
     warehouses, addWarehouse, transferStock, assets, addAsset,
-    recordAdvance, getAdvanceBalance, recordPaymentVoucher, addOpeningStock, bulkAddOpeningStock, resetSystem, clearTransactions
+    recordAdvance, getAdvanceBalance, recordPaymentVoucher, addOpeningStock, bulkAddOpeningStock, resetSystem, clearTransactions, connectionError,
+    isDemoMode
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;

@@ -126,19 +126,32 @@ const ShopManagement: React.FC = () => {
       if (window.confirm("DANGER: This will delete ALL data (shops, users, products, transactions, etc.). This action cannot be undone. Are you sure you want to wipe the system?")) {
           if (window.confirm("Please confirm again: DELETE ALL DATA?")) {
               setIsResetting(true);
-              await resetSystem();
-              setIsResetting(false);
+              try {
+                  await resetSystem();
+              } catch (e) {
+                  console.error(e);
+                  alert('Reset failed. Check console.');
+                  setIsResetting(false);
+              }
           }
       }
   }
 
   const handleClearTransactions = async () => {
+      console.log('Clear Transactions clicked');
       if (isResetting) return;
 
-      if (window.confirm("WARNING: This will delete ALL Transactions, Shipments, and Alerts. Shops, Products, Users, Customers, and Accounts will be KEPT. Are you sure?")) {
+      if (window.confirm("WARNING: This will delete ALL Transactions, Shipments, and Alerts. Shops, Products, Users, Customers, and Accounts will be KEPT. Are you sure you want to delete operational history?")) {
           setIsResetting(true);
-          await clearTransactions();
-          setIsResetting(false);
+          try {
+              console.log('Calling clearTransactions from context...');
+              await clearTransactions();
+              console.log('clearTransactions completed');
+          } catch (e: any) {
+              console.error("Clear transactions failed in UI:", e);
+              alert(`Failed to clear transactions: ${e.message}`);
+              setIsResetting(false);
+          }
       }
   }
   
@@ -185,6 +198,7 @@ const ShopManagement: React.FC = () => {
             <p className="text-xs text-gray-500 mb-2">System Administration Tasks</p>
             
             <button 
+                type="button"
                 onClick={handleClearTransactions} 
                 disabled={isResetting}
                 className={`w-full text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center ${isResetting ? 'bg-orange-300 cursor-wait' : 'bg-orange-500 hover:bg-orange-600'}`}
@@ -202,6 +216,7 @@ const ShopManagement: React.FC = () => {
             </button>
 
             <button 
+                type="button"
                 onClick={handleSystemReset} 
                 disabled={isResetting}
                 className={`w-full text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center ${isResetting ? 'bg-red-400 cursor-wait' : 'bg-red-600 hover:bg-red-700'}`}
