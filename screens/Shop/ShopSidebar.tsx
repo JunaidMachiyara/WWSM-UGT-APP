@@ -1,17 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShopView } from './ShopDashboard';
 import { useAppContext } from '../../context/AppContext';
+import { UserRole } from '../../types';
 
-// SVG Icons
-const DashboardIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>;
-const ReceiveStockIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>;
-const SalesIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>;
-const HistoryIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-const ReportIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
-const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
-const CalculatorIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>;
-const SettingsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066 2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.096 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>;
+// Icons
+const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
+const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>;
 
 interface ShopSidebarProps {
   activeView: ShopView;
@@ -19,216 +14,251 @@ interface ShopSidebarProps {
 }
 
 const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
-  const { shops, shopId } = useAppContext();
+  const { shops, shopId, logout, currentUser, switchShop, role } = useAppContext();
   const currentShop = shops.find(s => s.id === shopId);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  const isLedgersActive = ['supplierLedger', 'clearingAgentLedger', 'customsLedger', 'dutyLedger', 'reports-ledgers', 'cashLedger', 'bankLedger'].includes(activeView);
-  const isReportsActive = activeView.startsWith('reports-') || ['inventory'].includes(activeView) || isLedgersActive;
-  const isAccountingActive = ['receiptVoucher', 'paymentVoucher', 'salesReturn', 'accountManagement', 'expenses', 'customerAdvances'].includes(activeView);
-  const isSetupActive = ['customerManagement', 'warehouseManagement', 'assetManagement', 'openingStock'].includes(activeView);
+  // Dropdown States
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
+  const navRef = useRef<HTMLDivElement>(null);
 
-  const [reportsOpen, setReportsOpen] = useState(isReportsActive);
-  const [ledgersOpen, setLedgersOpen] = useState(isLedgersActive);
-  const [accountingOpen, setAccountingOpen] = useState(isAccountingActive);
-  const [setupOpen, setSetupOpen] = useState(isSetupActive);
-  
+  const allowedShops = currentUser?.allowedShopIds?.length || 0;
+
   useEffect(() => {
-    if (isLedgersActive) {
-        setLedgersOpen(true);
-        setReportsOpen(true);
-    } else if (isReportsActive) {
-        setReportsOpen(true);
-    }
-    if (isAccountingActive) setAccountingOpen(true);
-    if (isSetupActive) setSetupOpen(true);
-  }, [activeView, isReportsActive, isLedgersActive, isAccountingActive, isSetupActive]);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (navRef.current && !navRef.current.contains(event.target as Node)) {
+        setActiveDropdown(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
-  const mainNavItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-    { id: 'receiveStock', label: 'Receive Stock', icon: <ReceiveStockIcon /> },
-    { id: 'sales', label: 'Record Sales', icon: <SalesIcon /> },
-    { id: 'salesHistory', label: 'Sales History', icon: <HistoryIcon /> },
-  ];
+  const handleNavClick = (view: ShopView) => {
+      setView(view);
+      setActiveDropdown(null);
+      setMobileMenuOpen(false);
+  };
 
+  const toggleDropdown = (menu: string) => {
+      setActiveDropdown(activeDropdown === menu ? null : menu);
+  };
+
+  // Nav Groups
   const accountingItems = [
-      { id: 'receiptVoucher' as ShopView, label: 'Receipt Voucher' },
-      { id: 'paymentVoucher' as ShopView, label: 'Payment Voucher' },
-      { id: 'salesReturn' as ShopView, label: 'Sales Returns' },
-      { id: 'customerAdvances' as ShopView, label: 'Customer Advances' },
-      { id: 'expenses' as ShopView, label: 'Record Expenses' },
-      { id: 'accountManagement' as ShopView, label: 'Cash & Bank' },
+      { id: 'receiptVoucher', label: 'Receipt Voucher (In)' },
+      { id: 'paymentVoucher', label: 'Payment Voucher (Out)' },
+      { id: 'salesReturn', label: 'Sales Returns' },
+      { id: 'customerAdvances', label: 'Customer Advances' },
+      { id: 'expenses', label: 'Record Expenses' },
+      { id: 'accountManagement', label: 'Cash & Bank Accounts' },
   ];
   
-  const directReportItems = [
-      { id: 'inventory' as ShopView, label: 'Inventory Stock' },
-      { id: 'reports-income' as ShopView, label: 'Income Statement' },
-  ];
-
-  const ledgerItems = [
-      { id: 'reports-ledgers' as ShopView, label: 'Customer Ledgers' },
-      { id: 'supplierLedger' as ShopView, label: 'Supplier Ledger' },
-      { id: 'cashLedger' as ShopView, label: 'Cash Ledgers' },
-      { id: 'bankLedger' as ShopView, label: 'Bank Ledgers' },
-      { id: 'clearingAgentLedger' as ShopView, label: 'Clearing Agent Report' },
-      { id: 'customsLedger' as ShopView, label: 'Customs Report' },
-      { id: 'dutyLedger' as ShopView, label: 'Duty Report' },
+  const reportItems = [
+      { id: 'inventory', label: 'Inventory Stock' },
+      { id: 'reports-income', label: 'Income Statement' },
+      { id: 'reports-ledgers', label: 'Customer Ledgers' },
+      { id: 'supplierLedger', label: 'Supplier (HO) Ledger' },
+      { id: 'cashLedger', label: 'Cash Account Ledgers' },
+      { id: 'bankLedger', label: 'Bank Account Ledgers' },
+      { id: 'clearingAgentLedger', label: 'Clearing Report' },
+      { id: 'customsLedger', label: 'Customs Report' },
+      { id: 'dutyLedger', label: 'Duty Report' },
   ];
 
   const setupItems = [
-      { id: 'openingStock' as ShopView, label: 'Opening Stock' },
-      { id: 'customerManagement' as ShopView, label: 'Customers' },
-      { id: 'warehouseManagement' as ShopView, label: 'Warehouse Mgt' },
-      { id: 'assetManagement' as ShopView, label: 'Asset Management' },
+      { id: 'openingStock', label: 'Opening Stock' },
+      { id: 'customerManagement', label: 'Customers' },
+      { id: 'warehouseManagement', label: 'Warehouses' },
+      { id: 'assetManagement', label: 'Assets' },
   ];
 
-  const baseStyle = "flex items-center px-4 py-3 transition-colors duration-200 cursor-pointer";
-  const activeStyle = "bg-primary-dark text-white font-bold";
-  const inactiveStyle = "text-gray-600 hover:bg-primary-dark hover:text-white";
+  const NavLink = ({ id, label }: { id: ShopView, label: string }) => (
+      <button
+          onClick={() => handleNavClick(id)}
+          className={`px-3 py-2 rounded-md text-sm font-medium transition-colors whitespace-nowrap ${
+              activeView === id 
+              ? 'bg-primary text-white shadow-sm' 
+              : 'text-gray-700 hover:bg-blue-100 hover:text-primary'
+          }`}
+      >
+          {label}
+      </button>
+  );
 
-  const subMenuStyle = "flex items-center pl-12 pr-4 py-2 text-sm transition-colors duration-200 cursor-pointer";
-  const activeSubMenuStyle = "bg-primary text-white font-semibold";
-  const inactiveSubMenuStyle = "text-gray-500 hover:bg-primary-dark hover:text-white";
-  
-  const nestedSubMenuStyle = "flex items-center pl-16 pr-4 py-2 text-sm transition-colors duration-200 cursor-pointer";
-
+  const Dropdown = ({ label, items, isOpen, onToggle }: { label: string, items: {id: string, label: string}[], isOpen: boolean, onToggle: () => void }) => {
+      const isActive = items.some(i => i.id === activeView);
+      return (
+          <div className="relative">
+              <button
+                  onClick={onToggle}
+                  className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors focus:outline-none ${
+                      isActive || isOpen ? 'text-primary bg-blue-100' : 'text-gray-700 hover:bg-blue-100 hover:text-primary'
+                  }`}
+              >
+                  {label}
+                  <ChevronDownIcon />
+              </button>
+              
+              {isOpen && (
+                  <div className="absolute left-0 mt-2 w-56 rounded-md shadow-xl bg-white ring-1 ring-black ring-opacity-5 focus:outline-none z-50 animate-fade-in-down origin-top-left">
+                      <div className="py-1">
+                          {items.map(item => (
+                              <button
+                                  key={item.id}
+                                  onClick={() => handleNavClick(item.id as ShopView)}
+                                  className={`block w-full text-left px-4 py-2 text-sm ${
+                                      activeView === item.id 
+                                      ? 'bg-blue-50 text-primary font-semibold' 
+                                      : 'text-gray-700 hover:bg-gray-50'
+                                  }`}
+                              >
+                                  {item.label}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+              )}
+          </div>
+      );
+  };
 
   return (
-    <aside className="w-64 h-full bg-white text-gray-800 flex flex-col border-r overflow-y-auto">
-      <div className="h-20 flex flex-col items-center justify-center border-b text-center px-2 flex-shrink-0">
-        <h2 className="text-xl font-bold text-primary">WWSM_UGT</h2>
-        <p className="text-sm text-gray-500 truncate">{currentShop?.name}</p>
+    <nav className="bg-blue-50" ref={navRef}>
+      <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between h-16">
+          
+          {/* Left Side: Logo & Main Nav */}
+          <div className="flex items-center">
+            <div className="flex-shrink-0 flex items-center mr-6">
+              <span className="text-xl font-extrabold text-primary tracking-tight">WWSM_UGT</span>
+              <div className="ml-3 flex flex-col justify-center border-l border-blue-200 pl-3">
+                  <span className="text-xs font-bold text-gray-800 uppercase tracking-wide leading-none">{currentShop?.name}</span>
+                  <span className="text-[10px] text-gray-500 leading-none mt-0.5">{currentShop?.country}</span>
+              </div>
+            </div>
+            
+            {/* Desktop Menu */}
+            <div className="hidden lg:flex lg:space-x-1 lg:items-center">
+              <NavLink id="dashboard" label="Dashboard" />
+              <NavLink id="receiveStock" label="Receive Stock" />
+              <NavLink id="sales" label="Sales" />
+              <NavLink id="salesHistory" label="History" />
+              
+              <div className="h-6 w-px bg-blue-200 mx-2"></div>
+
+              <Dropdown 
+                  label="Accounting" 
+                  items={accountingItems} 
+                  isOpen={activeDropdown === 'accounting'} 
+                  onToggle={() => toggleDropdown('accounting')}
+              />
+              
+              <Dropdown 
+                  label="Reports" 
+                  items={reportItems} 
+                  isOpen={activeDropdown === 'reports'} 
+                  onToggle={() => toggleDropdown('reports')}
+              />
+
+              <Dropdown 
+                  label="Setup" 
+                  items={setupItems} 
+                  isOpen={activeDropdown === 'setup'} 
+                  onToggle={() => toggleDropdown('setup')}
+              />
+            </div>
+          </div>
+
+          {/* Right Side: User & Logout */}
+          <div className="hidden lg:flex items-center space-x-4">
+              {role === UserRole.SHOP_OPERATOR && allowedShops > 1 && (
+                  <button 
+                    onClick={() => switchShop(null)}
+                    className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline px-2"
+                  >
+                      Switch Shop
+                  </button>
+              )}
+              <div className="text-right">
+                  <p className="text-sm font-bold text-gray-900">{currentUser?.name}</p>
+                  <p className="text-xs text-gray-500">{role === UserRole.HEAD_OFFICE ? 'Admin Mode' : 'Operator'}</p>
+              </div>
+              <button
+                onClick={logout}
+                className="bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 px-4 py-2 rounded-md text-sm font-medium transition-colors border border-gray-200 hover:border-red-200 shadow-sm"
+              >
+                Logout
+              </button>
+          </div>
+
+          {/* Mobile Menu Button */}
+          <div className="flex items-center lg:hidden">
+            <button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-primary hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
+            >
+              <MenuIcon />
+            </button>
+          </div>
+        </div>
       </div>
-      <nav className="flex-1 px-2 py-4 space-y-2">
-        {mainNavItems.map(item => (
-          <a
-            key={item.id}
-            className={`${baseStyle} ${activeView === item.id ? activeStyle : inactiveStyle}`}
-            onClick={() => setView(item.id as ShopView)}
-          >
-            {item.icon}
-            <span className="ml-3">{item.label}</span>
-          </a>
-        ))}
-        
-        {/* Accounting collapsible menu */}
-        <div>
-            <div
-                className={`${baseStyle} justify-between ${isAccountingActive ? activeStyle : inactiveStyle}`}
-                onClick={() => setAccountingOpen(!accountingOpen)}
-            >
-                <div className="flex items-center">
-                    <CalculatorIcon />
-                    <span className="ml-3">Accounting</span>
-                </div>
-                <div className={`transition-transform duration-300 ${accountingOpen ? 'rotate-180' : ''}`}>
-                    <ChevronDownIcon />
-                </div>
-            </div>
-            {accountingOpen && (
-                <div className="py-1 bg-gray-50">
-                    {accountingItems.map(item => (
-                        <a
-                            key={item.id}
-                            className={`${subMenuStyle} ${activeView === item.id ? activeSubMenuStyle : inactiveSubMenuStyle}`}
-                            onClick={() => setView(item.id)}
-                        >
-                            {item.label}
-                        </a>
-                    ))}
-                </div>
-            )}
-        </div>
 
-         {/* Reports collapsible menu */}
-        <div>
-            <div
-                className={`${baseStyle} justify-between ${isReportsActive ? activeStyle : inactiveStyle}`}
-                onClick={() => setReportsOpen(!reportsOpen)}
-            >
-                <div className="flex items-center">
-                    <ReportIcon />
-                    <span className="ml-3">Reports</span>
-                </div>
-                <div className={`transition-transform duration-300 ${reportsOpen ? 'rotate-180' : ''}`}>
-                    <ChevronDownIcon />
-                </div>
+      {/* Mobile Menu (Drawer) - Keep white for contrast */}
+      {mobileMenuOpen && (
+        <div className="lg:hidden border-t border-gray-200 bg-white absolute w-full z-50 shadow-lg">
+          <div className="pt-2 pb-3 space-y-1 px-2">
+            <button onClick={() => handleNavClick('dashboard')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Dashboard</button>
+            <button onClick={() => handleNavClick('receiveStock')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Receive Stock</button>
+            <button onClick={() => handleNavClick('sales')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Sales</button>
+            <button onClick={() => handleNavClick('salesHistory')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">History</button>
+            
+            <div className="pt-4 pb-2">
+                <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Accounting</p>
+                {accountingItems.map(i => (
+                    <button key={i.id} onClick={() => handleNavClick(i.id as ShopView)} className="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-50 pl-6">{i.label}</button>
+                ))}
             </div>
-            {reportsOpen && (
-                <div className="py-1 bg-gray-50">
-                    {/* Direct Reports */}
-                    {directReportItems.map(item => (
-                        <a
-                            key={item.id}
-                            className={`${subMenuStyle} ${activeView === item.id ? activeSubMenuStyle : inactiveSubMenuStyle}`}
-                            onClick={() => setView(item.id)}
-                        >
-                            {item.label}
-                        </a>
-                    ))}
-                    
-                    {/* Nested Ledgers Section */}
-                    <div>
-                        <div
-                             className={`${subMenuStyle} justify-between ${isLedgersActive ? 'text-primary font-semibold' : 'text-gray-600 hover:bg-gray-100'}`}
-                             onClick={(e) => {
-                                 e.stopPropagation();
-                                 setLedgersOpen(!ledgersOpen);
-                             }}
-                        >
-                            <span>Ledgers</span>
-                             <div className={`transition-transform duration-300 ${ledgersOpen ? 'rotate-180' : ''}`}>
-                                <ChevronDownIcon />
-                            </div>
-                        </div>
-                        {ledgersOpen && (
-                            <div className="bg-gray-100 border-l-4 border-gray-200 ml-6">
-                                {ledgerItems.map(item => (
-                                    <a
-                                        key={item.id}
-                                        className={`flex items-center pl-6 pr-4 py-2 text-sm transition-colors duration-200 cursor-pointer ${activeView === item.id ? 'bg-primary text-white font-semibold' : 'text-gray-500 hover:bg-gray-200'}`}
-                                        onClick={() => setView(item.id)}
-                                    >
-                                        {item.label}
-                                    </a>
-                                ))}
-                            </div>
-                        )}
-                    </div>
 
-                </div>
-            )}
-        </div>
-
-        {/* Setup collapsible menu */}
-        <div>
-            <div
-                className={`${baseStyle} justify-between ${isSetupActive ? activeStyle : inactiveStyle}`}
-                onClick={() => setSetupOpen(!setupOpen)}
-            >
-                <div className="flex items-center">
-                    <SettingsIcon />
-                    <span className="ml-3">Setup</span>
-                </div>
-                <div className={`transition-transform duration-300 ${setupOpen ? 'rotate-180' : ''}`}>
-                    <ChevronDownIcon />
-                </div>
+            <div className="pt-2 pb-2">
+                <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Reports & Ledgers</p>
+                {reportItems.map(i => (
+                    <button key={i.id} onClick={() => handleNavClick(i.id as ShopView)} className="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-50 pl-6">{i.label}</button>
+                ))}
             </div>
-            {setupOpen && (
-                <div className="py-1 bg-gray-50">
-                    {setupItems.map(item => (
-                        <a
-                            key={item.id}
-                            className={`${subMenuStyle} ${activeView === item.id ? activeSubMenuStyle : inactiveSubMenuStyle}`}
-                            onClick={() => setView(item.id)}
-                        >
-                            {item.label}
-                        </a>
-                    ))}
-                </div>
+
+            <div className="pt-2 pb-2">
+                <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Setup</p>
+                {setupItems.map(i => (
+                    <button key={i.id} onClick={() => handleNavClick(i.id as ShopView)} className="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-50 pl-6">{i.label}</button>
+                ))}
+            </div>
+          </div>
+          <div className="pt-4 pb-4 border-t border-gray-200 px-4 bg-gray-50">
+            <div className="flex items-center">
+              <div className="ml-3">
+                <div className="text-base font-medium text-gray-800">{currentUser?.name}</div>
+                <div className="text-sm font-medium text-gray-500">{role}</div>
+              </div>
+              <button
+                onClick={logout}
+                className="ml-auto bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded-md text-sm font-medium shadow-sm"
+              >
+                Logout
+              </button>
+            </div>
+            {role === UserRole.SHOP_OPERATOR && allowedShops > 1 && (
+                <button 
+                    onClick={() => switchShop(null)}
+                    className="mt-3 w-full text-center text-sm bg-white border border-blue-300 text-blue-700 py-2 rounded font-medium shadow-sm"
+                >
+                    Switch Shop Location
+                </button>
             )}
+          </div>
         </div>
-      </nav>
-    </aside>
+      )}
+    </nav>
   );
 };
 

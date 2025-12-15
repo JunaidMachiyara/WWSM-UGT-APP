@@ -28,6 +28,14 @@ const Dashboard: React.FC = () => {
   const { transactions, shops, products, shipments, alerts, warehouses } = useAppContext();
   const [modalState, setModalState] = useState<DetailModalState | null>(null);
 
+  // Helper for compact formatting (e.g. 1.5K, 2M)
+  const formatCompact = (num: number) => {
+    return '$' + new Intl.NumberFormat('en-US', {
+        notation: "compact",
+        maximumFractionDigits: 1
+    }).format(num);
+  };
+
   // --- KPI Calculations ---
 
   // 1. Financials
@@ -440,19 +448,19 @@ const Dashboard: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <DashboardCard 
                 title="Total Revenue" 
-                value={`$${totalSales.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
+                value={formatCompact(totalSales)} 
                 icon={<RevenueIcon />} 
                 color="bg-blue-600" 
             />
             <DashboardCard 
                 title="Net Profit" 
-                value={`$${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
+                value={formatCompact(netProfit)} 
                 icon={<ProfitIcon />} 
                 color={netProfit >= 0 ? "bg-green-600" : "bg-red-600"} 
             />
              <DashboardCard 
                 title="Total Expenses" 
-                value={`$${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`} 
+                value={formatCompact(totalExpenses)} 
                 icon={<ExpenseIcon />} 
                 color="bg-red-500" 
             />
@@ -477,14 +485,14 @@ const Dashboard: React.FC = () => {
                 <div className="flex justify-between items-start mb-4">
                     <div>
                         <p className="text-gray-400 text-sm">Total Inventory Value (Cost)</p>
-                        <h3 className="text-3xl font-bold">${inventoryValuation.cost.toLocaleString()}</h3>
+                        <h3 className="text-3xl font-bold">{formatCompact(inventoryValuation.cost)}</h3>
                     </div>
                     <InventoryIcon />
                 </div>
                 <div className="border-t border-gray-700 pt-4">
                     <div className="flex justify-between items-center text-sm">
                         <span className="text-gray-400">Potential Retail Value</span>
-                        <span className="text-green-400 font-semibold">${inventoryValuation.retail.toLocaleString()}</span>
+                        <span className="text-green-400 font-semibold">{formatCompact(inventoryValuation.retail)}</span>
                     </div>
                     <div className="flex justify-between items-center text-sm mt-1">
                          <span className="text-gray-400">Potential ROI</span>

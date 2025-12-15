@@ -9,6 +9,7 @@ const ItemManagement: React.FC = () => {
   const [category, setCategory] = useState('');
   const [hoCost, setHoCost] = useState(0);
   const [minSalePrice, setMinSalePrice] = useState(0);
+  const [weight, setWeight] = useState(0);
 
   // CSV Import State
   const [csvFile, setCsvFile] = useState<File | null>(null);
@@ -27,19 +28,26 @@ const ItemManagement: React.FC = () => {
         alert('Minimum Sale Price cannot be less than the Head Office Cost.');
         return;
     }
-    addProduct({ name, category, hoCost: Number(hoCost), minSalePrice: Number(minSalePrice) });
+    addProduct({ 
+        name, 
+        category, 
+        hoCost: Number(hoCost), 
+        minSalePrice: Number(minSalePrice),
+        weight: Number(weight)
+    });
     setName('');
     setCategory('');
     setHoCost(0);
     setMinSalePrice(0);
+    setWeight(0);
   };
 
   // CSV Helper: Download Template
   const downloadTemplate = () => {
-      const headers = ['Name', 'Category', 'HO Cost', 'Min Sale Price'];
+      const headers = ['Name', 'Category', 'HO Cost', 'Min Sale Price', 'Weight (Kg)'];
       const rows = [
-          ['Sample Product A', 'Electronics', '150.00', '200.00'],
-          ['Sample Product B', 'Furniture', '85.50', '120.00']
+          ['Sample Product A', 'Electronics', '150.00', '200.00', '2.5'],
+          ['Sample Product B', 'Furniture', '85.50', '120.00', '15.0']
       ];
       
       const csvContent = "data:text/csv;charset=utf-8," 
@@ -77,8 +85,7 @@ const ItemManagement: React.FC = () => {
               return;
           }
 
-          // Simple CSV parse (assumes no commas in fields for this basic version)
-          // A robust solution would use a regex library, but native split is okay for simple templates.
+          // Simple CSV parse
           const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
           
           // Validate Headers
@@ -94,6 +101,7 @@ const ItemManagement: React.FC = () => {
           const catIdx = headers.indexOf('category');
           const costIdx = headers.indexOf('ho cost');
           const priceIdx = headers.indexOf('min sale price');
+          const weightIdx = headers.indexOf('weight (kg)');
 
           const parsedItems: Omit<Product, 'id'>[] = [];
           let errorLines = 0;
@@ -112,13 +120,15 @@ const ItemManagement: React.FC = () => {
               const category = cols[catIdx];
               const cost = parseFloat(cols[costIdx]);
               const price = parseFloat(cols[priceIdx]);
+              const weight = weightIdx !== -1 ? parseFloat(cols[weightIdx]) : 0;
 
               if (name && category && !isNaN(cost) && !isNaN(price) && cost > 0 && price > 0) {
                   parsedItems.push({
                       name,
                       category,
                       hoCost: cost,
-                      minSalePrice: price
+                      minSalePrice: price,
+                      weight: isNaN(weight) ? 0 : weight
                   });
               } else {
                   errorLines++;
@@ -172,13 +182,19 @@ const ItemManagement: React.FC = () => {
                     <label htmlFor="itemCategory" className="block text-sm font-medium text-gray-700">Category</label>
                     <input type="text" id="itemCategory" value={category} onChange={e => setCategory(e.target.value)} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required />
                 </div>
-                <div>
-                    <label htmlFor="hoCost" className="block text-sm font-medium text-gray-700">Head Office Cost ($)</label>
-                    <input type="number" id="hoCost" value={hoCost} onChange={e => setHoCost(Number(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required min="0.01" step="0.01" />
+                <div className="grid grid-cols-2 gap-4">
+                    <div>
+                        <label htmlFor="hoCost" className="block text-sm font-medium text-gray-700">HO Cost ($)</label>
+                        <input type="number" id="hoCost" value={hoCost} onChange={e => setHoCost(Number(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required min="0.01" step="0.01" />
+                    </div>
+                    <div>
+                        <label htmlFor="minSalePrice" className="block text-sm font-medium text-gray-700">Min Sale Price ($)</label>
+                        <input type="number" id="minSalePrice" value={minSalePrice} onChange={e => setMinSalePrice(Number(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required min="0.01" step="0.01" />
+                    </div>
                 </div>
                 <div>
-                    <label htmlFor="minSalePrice" className="block text-sm font-medium text-gray-700">Minimum Sale Price ($)</label>
-                    <input type="number" id="minSalePrice" value={minSalePrice} onChange={e => setMinSalePrice(Number(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required min="0.01" step="0.01" />
+                    <label htmlFor="itemWeight" className="block text-sm font-medium text-gray-700">Weight (Kg)</label>
+                    <input type="number" id="itemWeight" value={weight} onChange={e => setWeight(Number(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" step="0.01" />
                 </div>
                 <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg">Add Item</button>
                 </form>
@@ -262,6 +278,7 @@ const ItemManagement: React.FC = () => {
                                         <th className="px-4 py-2 text-left font-medium text-gray-500">Category</th>
                                         <th className="px-4 py-2 text-right font-medium text-gray-500">HO Cost</th>
                                         <th className="px-4 py-2 text-right font-medium text-gray-500">Min Price</th>
+                                        <th className="px-4 py-2 text-right font-medium text-gray-500">Weight</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
@@ -271,6 +288,7 @@ const ItemManagement: React.FC = () => {
                                             <td className="px-4 py-2 text-gray-500">{item.category}</td>
                                             <td className="px-4 py-2 text-right text-gray-500">${item.hoCost.toFixed(2)}</td>
                                             <td className="px-4 py-2 text-right text-gray-500">${item.minSalePrice.toFixed(2)}</td>
+                                            <td className="px-4 py-2 text-right text-gray-500">{item.weight || 0}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -292,6 +310,7 @@ const ItemManagement: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HO Cost</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Min Sale Price</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weight (Kg)</th>
                 </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -301,6 +320,7 @@ const ItemManagement: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.category}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${product.hoCost.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${product.minSalePrice.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{product.weight || 0}</td>
                     </tr>
                 ))}
                 </tbody>

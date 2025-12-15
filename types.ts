@@ -111,6 +111,7 @@ export interface Product {
   category: string;
   hoCost: number; // Head Office cost
   minSalePrice: number;
+  weight?: number; // Weight in Kg
 }
 
 export interface User {
