@@ -46,7 +46,7 @@ const ExclamationIcon: React.FC<ExclamationIconProps> = ({ colorClass = 'text-gr
 
 
 const Sales: React.FC = () => {
-  const { shopId, products, recordSale, customers, addCustomer, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
+  const { shopId, products, recordSale, customers, addCustomer, addProduct, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
   
   const [items, setItems] = useState<InvoiceItem[]>([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
   const [customerId, setCustomerId] = useState('');
@@ -62,6 +62,14 @@ const Sales: React.FC = () => {
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
+
+  // Quick Add Product State
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [newProductCategory, setNewProductCategory] = useState('');
+  const [newProductHoCost, setNewProductHoCost] = useState(0);
+  const [newProductMinSalePrice, setNewProductMinSalePrice] = useState(0);
+  const [newProductWeight, setNewProductWeight] = useState(0);
 
   const shopCustomers = customers.filter(c => c.shopId === shopId);
   const currentShopAccounts = shopAccounts.filter(acc => acc.shopId === shopId);
@@ -91,13 +99,11 @@ const Sales: React.FC = () => {
     if (!shopId) return;
 
     const generateInvoiceNumber = () => {
-        // Format: Sequence + "-" + MMDDYY
-        // e.g., 1001-112025
         const today = new Date();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const yy = String(today.getFullYear()).slice(-2);
-        const dateSuffix = `${mm}${dd}${yy}`; // MMDDYY
+        const dateSuffix = `${mm}${dd}${yy}`;
 
         const salesTransactions = transactions.filter(t => t.shopId === shopId && (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE));
 
@@ -105,7 +111,6 @@ const Sales: React.FC = () => {
         
         salesTransactions.forEach(t => {
             if (t.invoiceId) {
-                // Regex to match pattern: (Digits)-(Any suffix)
                 const match = t.invoiceId.match(/^(\d+)-/);
                 if (match && match[1]) {
                     const seq = parseInt(match[1]);
@@ -133,7 +138,6 @@ const Sales: React.FC = () => {
         item.productId = newProductId;
         item.stock = getStockLevel(newProductId, item.locationId);
         const product = products.find(p => p.id === newProductId);
-        // minSalePrice is in USD, convert it for display check
         if(product) {
             item.minSalePrice = product.minSalePrice * (currentShopCurrency.rate || 1);
         }
@@ -183,22 +187,16 @@ const Sales: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
     const itemsWithProduct = items.filter(i => i.productId);
-
     if (itemsWithProduct.length === 0) {
         alert('Please add at least one item to the invoice by selecting a product.');
         return;
     }
-
     const invalidItems = itemsWithProduct.filter(i => i.quantity <= 0 || i.salePrice <= 0 || !i.locationId);
     if (invalidItems.length > 0) {
         alert('Please ensure all added items have a dispatch location, a quantity and sale price greater than zero.');
         return;
     }
-
-    const validItems = itemsWithProduct;
-
     if (!shopId || !customerId || !saleDate) {
       alert('Please select a customer and a date for the invoice.');
       return;
@@ -207,26 +205,22 @@ const Sales: React.FC = () => {
       alert('Cash paid amount cannot be negative.');
       return;
     }
-    
     if (cashPaid > 0 && !paymentAccountId) {
         alert('Please select an account to deposit the cash payment into.');
         return;
     }
-
     const dateForTransaction = new Date(saleDate + 'T00:00:00');
-
     recordSale({
       shopId,
       customerId,
       invoiceNumber,
       manualReference: manualRef,
-      items: validItems,
+      items: itemsWithProduct,
       cashPaid: cashPaid || 0,
       advanceApplied: advanceApplied || 0,
       date: dateForTransaction,
       paymentAccountId,
     });
-
     setSuccessMessage(`Sale recorded successfully! Invoice #${invoiceNumber}`);
     resetForm();
     setTimeout(() => setSuccessMessage(''), 5000);
@@ -238,7 +232,6 @@ const Sales: React.FC = () => {
           return;
       }
       if (!shopId) return;
-
       try {
           addCustomer({
               name: newCustomerName,
@@ -246,13 +239,37 @@ const Sales: React.FC = () => {
               shopId,
               reference: 'Quick Add'
           });
-          
           setNewCustomerName('');
           setNewCustomerPhone('');
           setShowAddCustomerModal(false);
       } catch (error) {
           console.error(error);
           alert('Failed to add customer.');
+      }
+  };
+
+  const handleQuickAddProduct = async () => {
+      if (!newProductName.trim() || !newProductCategory.trim() || newProductHoCost <= 0 || newProductMinSalePrice <= 0) {
+          alert('Please fill all product fields correctly. Costs and prices must be greater than zero.');
+          return;
+      }
+      try {
+          addProduct({
+              name: newProductName,
+              category: newProductCategory,
+              hoCost: newProductHoCost,
+              minSalePrice: newProductMinSalePrice,
+              weight: newProductWeight
+          });
+          setNewProductName('');
+          setNewProductCategory('');
+          setNewProductHoCost(0);
+          setNewProductMinSalePrice(0);
+          setNewProductWeight(0);
+          setShowAddProductModal(false);
+      } catch (error) {
+          console.error(error);
+          alert('Failed to add product.');
       }
   };
 
@@ -308,7 +325,16 @@ const Sales: React.FC = () => {
                 return (
               <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end border-t border-gray-200 pt-4 first:pt-0 first:border-none">
                 <div className="md:col-span-3">
-                  <label className="block text-sm font-medium text-gray-700">Product</label>
+                  <div className="flex justify-between items-center mb-1">
+                      <label className="block text-sm font-medium text-gray-700">Product</label>
+                      <button 
+                        type="button" 
+                        onClick={() => setShowAddProductModal(true)} 
+                        className="text-[10px] text-primary hover:text-blue-800 font-bold hover:underline focus:outline-none"
+                      >
+                        + New Product
+                      </button>
+                  </div>
                   <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary">
                     <option value="">Select a product</option>
                     {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -456,6 +482,88 @@ const Sales: React.FC = () => {
                             className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
                         >
                             Save Customer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Quick Add Product Modal */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg transform transition-all overflow-y-auto max-h-screen">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                    <h3 className="text-lg font-bold text-gray-800">Create New Product</h3>
+                    <button onClick={() => setShowAddProductModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                </div>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Product Name</label>
+                        <input 
+                            type="text" 
+                            value={newProductName} 
+                            onChange={e => setNewProductName(e.target.value)} 
+                            className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
+                            autoFocus 
+                            placeholder="e.g. 50"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Category</label>
+                        <input 
+                            type="text" 
+                            value={newProductCategory} 
+                            onChange={e => setNewProductCategory(e.target.value)} 
+                            className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                            placeholder="e.g. Electronics"
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">HO Cost ($ USD)</label>
+                            <input 
+                                type="number" 
+                                value={newProductHoCost} 
+                                onChange={e => setNewProductHoCost(parseFloat(e.target.value) || 0)} 
+                                className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                                min="0.01" step="0.01"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700">Min Sale Price ($ USD)</label>
+                            <input 
+                                type="number" 
+                                value={newProductMinSalePrice} 
+                                onChange={e => setNewProductMinSalePrice(parseFloat(e.target.value) || 0)} 
+                                className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                                min="0.01" step="0.01"
+                            />
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">Weight (Kg)</label>
+                        <input 
+                            type="number" 
+                            value={newProductWeight} 
+                            onChange={e => setNewProductWeight(parseFloat(e.target.value) || 0)} 
+                            className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                            min="0" step="0.01"
+                        />
+                    </div>
+                    <p className="text-xs text-gray-500 italic">Note: Head Office Cost and Min Sale Price are set in USD Base Currency.</p>
+                    <div className="flex justify-end space-x-3 mt-6">
+                        <button 
+                            onClick={() => setShowAddProductModal(false)} 
+                            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
+                        >
+                            Cancel
+                        </button>
+                        <button 
+                            onClick={handleQuickAddProduct} 
+                            className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
+                        >
+                            Save Product
                         </button>
                     </div>
                 </div>
