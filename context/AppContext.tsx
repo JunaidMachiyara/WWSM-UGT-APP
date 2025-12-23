@@ -12,8 +12,7 @@ import {
   deleteDoc, 
   getDocs,
   writeBatch,
-  orderBy,
-  limit
+  orderBy
 } from 'firebase/firestore';
 import { 
   User, 
@@ -147,10 +146,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [isDemoMode, setIsDemoMode] = useState(false);
-  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isDemoMode] = useState(false);
+  const [connectionError] = useState<string | null>(null);
 
-  // Sync state from Firestore
   useEffect(() => {
     const unsubShops = onSnapshot(collection(db, 'shops'), (s) => setShops(s.docs.map(d => ({ id: d.id, ...d.data() } as Shop))));
     const unsubProds = onSnapshot(collection(db, 'products'), (s) => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
@@ -344,9 +342,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const recordPayment = async (payload: any) => {
     await addDoc(collection(db, 'transactions'), {
       ...payload,
-      amount: payload.amount / currentShopCurrency.rate,
+      amount: payload.amount / (payload.shopId === 'HO' ? 1 : currentShopCurrency.rate),
       type: TransactionType.SALES_RECEIPT,
-      description: payload.notes || `Customer Payment Received`
+      description: payload.notes || `Payment Received`
     });
   };
 
@@ -413,4 +411,180 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await addDoc(collection(db, 'shipments'), {
       id: payload.shipmentId,
       shopId: payload.shopId,
-      date
+      date: new Date(),
+      status: ShipmentStatus.PENDING,
+      items: payload.items,
+      freightCost: payload.freightForwarder.amount,
+      freightForwarderId: payload.freightForwarder.id,
+      clearingCost: payload.clearingAgent.amount,
+      clearingAgentId: payload.clearingAgent.id,
+      customExpenseCost: payload.customExpense.amount,
+      customExpenseTypeId: payload.customExpense.typeId,
+      expectedDuty: payload.expectedDuty
+    });
+  };
+
+  const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string, extraItems?: any[] }) => {
+    const shipment = shipments.find(s => s.id === payload.shipmentId);
+    if (!shipment) return;
+
+    const batch = writeBatch(db);
+    const totalExpectedQty = shipment.items.reduce((sum, i) => sum + i.expectedQuantity, 0);
+    const overheadPerUnit = totalExpectedQty > 0 ? (shipment.freightCost + shipment.clearingCost + shipment.customExpenseCost + shipment.expectedDuty) / totalExpectedQty : 0;
+
+    for (const item of payload.receivedItems) {
+      const originalItem = shipment.items.find(i => i.productId === item.productId);
+      batch.set(doc(collection(db, 'transactions')), {
+        shopId: shipment.shopId,
+        productId: item.productId,
+        type: TransactionType.IMPORT,
+        quantity: item.quantity,
+        amount: (originalItem?.landedCost || 0) + overheadPerUnit,
+        description: `Shipment Receipt #${shipment.id}`,
+        locationId: payload.locationId,
+        date: new Date()
+      });
+    }
+
+    if (payload.extraItems) {
+        for (const extra of payload.extraItems) {
+            batch.set(doc(collection(db, 'transactions')), {
+                shopId: shipment.shopId,
+                productId: extra.productId,
+                type: TransactionType.IMPORT,
+                quantity: extra.quantity,
+                amount: extra.unitCost / currentShopCurrency.rate,
+                description: `Extra Items Recv with Shipment #${shipment.id}: ${extra.notes || ''}`,
+                locationId: payload.locationId,
+                date: new Date()
+            });
+        }
+    }
+
+    batch.update(doc(db, 'shipments', payload.shipmentId), { status: ShipmentStatus.RECEIVED });
+    await batch.commit();
+  };
+
+  const updateShipmentCosts = async (payload: any) => {
+      await updateDoc(doc(db, 'shipments', payload.shipmentId), {
+          freightCost: payload.freightCost,
+          clearingCost: payload.clearingCost,
+          customExpenseCost: payload.customExpenseCost,
+          expectedDuty: payload.expectedDuty
+      });
+  };
+
+  const recordPaymentVoucher = async (payload: any) => {
+      await addDoc(collection(db, 'transactions'), {
+          shopId: payload.shopId,
+          type: TransactionType.EXPENSE,
+          amount: payload.amount / (payload.shopId === 'HO' ? 1 : currentShopCurrency.rate),
+          paymentAccountId: payload.paymentAccountId,
+          description: payload.notes || `PV: ${payload.category} - ${payload.beneficiaryName}`,
+          date: payload.date
+      });
+  };
+
+  const recordSalesReturn = async (payload: any) => {
+      const batch = writeBatch(db);
+      for (const item of payload.returnedItems) {
+          batch.set(doc(collection(db, 'transactions')), {
+              shopId: payload.shopId,
+              customerId: payload.customerId,
+              invoiceId: payload.invoiceId,
+              productId: item.productId,
+              type: TransactionType.SALES_RETURN,
+              quantity: item.quantity,
+              amount: item.salePrice / currentShopCurrency.rate,
+              description: `Sales Return: ${payload.reason}`,
+              locationId: payload.locationId,
+              date: payload.date
+          });
+      }
+      if (payload.refundMethod === 'cash') {
+          batch.set(doc(collection(db, 'transactions')), {
+              shopId: payload.shopId,
+              type: TransactionType.EXPENSE,
+              amount: payload.returnedItems.reduce((s:number, i:any) => s + (i.quantity * i.salePrice), 0) / currentShopCurrency.rate,
+              paymentAccountId: payload.paymentAccountId,
+              description: `Cash Refund for Return - Inv #${payload.invoiceId}`,
+              date: payload.date
+          });
+      }
+      await batch.commit();
+  };
+
+  const addOpeningStock = async (p: OpeningStockPayload) => {
+      await addDoc(collection(db, 'transactions'), {
+          shopId: p.shopId,
+          productId: p.productId,
+          type: TransactionType.OPENING_STOCK,
+          quantity: p.quantity,
+          amount: p.unitCost / currentShopCurrency.rate,
+          locationId: p.locationId,
+          description: p.notes,
+          date: p.date
+      });
+  };
+
+  const bulkAddOpeningStock = async (items: OpeningStockPayload[]) => {
+      const batch = writeBatch(db);
+      items.forEach(p => {
+          batch.set(doc(collection(db, 'transactions')), {
+              shopId: p.shopId,
+              productId: p.productId,
+              type: TransactionType.OPENING_STOCK,
+              quantity: p.quantity,
+              amount: p.unitCost / currentShopCurrency.rate,
+              locationId: p.locationId,
+              description: p.notes,
+              date: p.date
+          });
+      });
+      await batch.commit();
+  };
+
+  const addUser = async (data: Omit<User, 'id'>) => { await addDoc(collection(db, 'users'), data); };
+  const updateUser = async (id: string, data: Partial<User>) => { await updateDoc(doc(db, 'users', id), data); };
+  const deleteUser = async (id: string) => { await deleteDoc(doc(db, 'users', id)); };
+
+  const addClearingAgent = async (data: Omit<ClearingAgent, 'id'>) => { await addDoc(collection(db, 'clearingAgents'), data); };
+  const addFreightForwarder = async (data: Omit<FreightForwarder, 'id'>) => { await addDoc(collection(db, 'freightForwarders'), data); };
+  const addCustomExpenseType = async (data: Omit<CustomExpenseType, 'id'>) => { await addDoc(collection(db, 'customExpenseTypes'), data); };
+  const addExpenseAccount = async (data: Omit<ExpenseAccount, 'id'>) => { await addDoc(collection(db, 'expenseAccounts'), data); };
+
+  const resetSystem = async () => {
+      const collections = ['shops', 'products', 'transactions', 'shipments', 'alerts', 'customers', 'warehouses', 'accounts', 'currencies', 'clearingAgents', 'freightForwarders', 'customExpenseTypes', 'expenseAccounts', 'assets', 'users'];
+      for (const col of collections) {
+          const snap = await getDocs(collection(db, col));
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+      }
+      window.location.reload();
+  };
+
+  const clearTransactions = async () => {
+      const collections = ['transactions', 'shipments', 'alerts'];
+      for (const col of collections) {
+          const snap = await getDocs(collection(db, col));
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+      }
+  };
+
+  return (
+    <AppContext.Provider value={{
+      currentUser, role, shopId, shops, products, transactions, shipments, alerts, customers, warehouses, shopAccounts, currencies, clearingAgents, freightForwarders, customExpenseTypes, expenseAccounts, assets, currentShopCurrency, isDemoMode, connectionError, login, logout, switchShop, addShop, updateShop, deleteShop, addCustomer, addProduct, bulkAddProducts, addShopAccount, updateCurrency, addCurrency, recordSale, recordPayment, addExpense, addWarehouse, transferStock, addAsset, recordAdvance, receiveShipment, addExport, updateShipmentCosts, recordPaymentVoucher, recordSalesReturn, addOpeningStock, bulkAddOpeningStock, markAlertAsRead, logAlert, resetSystem, clearTransactions, getStockLevel, getAdvanceBalance, formatCurrency, users, addUser, updateUser, deleteUser, addClearingAgent, addFreightForwarder, addCustomExpenseType, addExpenseAccount
+    }}>
+      {children}
+    </AppContext.Provider>
+  );
+};
+
+export const useAppContext = () => {
+  const context = useContext(AppContext);
+  if (context === undefined) throw new Error('useAppContext must be used within an AppProvider');
+  return context;
+};
