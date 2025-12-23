@@ -7,6 +7,7 @@ import { UserRole } from '../../types';
 // Icons
 const ChevronDownIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>;
 const MenuIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>;
+const HomeIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" viewBox="0 0 20 20" fill="currentColor"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z" /></svg>;
 
 interface ShopSidebarProps {
   activeView: ShopView;
@@ -22,7 +23,9 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const navRef = useRef<HTMLDivElement>(null);
 
-  const allowedShops = currentUser?.allowedShopIds?.length || 0;
+  const isManager = role === UserRole.MANAGER;
+  const isHO = role === UserRole.HEAD_OFFICE;
+  const multiShopAccess = (currentUser?.allowedShopIds?.length || 0) > 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -170,19 +173,39 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
             </div>
           </div>
 
-          {/* Right Side: User & Logout */}
+          {/* Right Side: Home, User & Logout */}
           <div className="hidden lg:flex items-center space-x-4">
-              {role === UserRole.SHOP_OPERATOR && allowedShops > 1 && (
+              {/* Home Button */}
+              <button 
+                  onClick={() => handleNavClick('dashboard')}
+                  title="Go to Shop Dashboard"
+                  className={`flex items-center px-3 py-2 rounded-md text-sm font-bold transition-all border border-transparent ${
+                      activeView === 'dashboard' 
+                      ? 'bg-primary text-white shadow-sm' 
+                      : 'text-primary hover:bg-blue-100 hover:border-blue-200'
+                  }`}
+              >
+                  <HomeIcon />
+                  Shop Home
+              </button>
+
+              <div className="h-8 w-px bg-blue-200"></div>
+
+              {(isManager || (isHO && multiShopAccess)) && (
                   <button 
                     onClick={() => switchShop(null)}
-                    className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline px-2"
+                    className="flex items-center text-xs font-bold text-blue-700 bg-blue-100 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-200 transition-all shadow-sm"
                   >
-                      Switch Shop
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
+                      </svg>
+                      {isManager ? 'MANAGER PORTAL' : 'SWITCH SHOP'}
                   </button>
               )}
+
               <div className="text-right">
                   <p className="text-sm font-bold text-gray-900">{currentUser?.name}</p>
-                  <p className="text-xs text-gray-500">{role === UserRole.HEAD_OFFICE ? 'Admin Mode' : 'Operator'}</p>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest">{isHO ? 'Administrator' : isManager ? 'Manager' : 'Operator'}</p>
               </div>
               <button
                 onClick={logout}
@@ -208,7 +231,27 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
       {mobileMenuOpen && (
         <div className="lg:hidden border-t border-gray-200 bg-white absolute w-full z-50 shadow-lg">
           <div className="pt-2 pb-3 space-y-1 px-2">
-            <button onClick={() => handleNavClick('dashboard')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Dashboard</button>
+            <button 
+                onClick={() => handleNavClick('dashboard')} 
+                className="flex items-center w-full text-left px-3 py-3 rounded-md text-base font-bold text-primary bg-blue-50 border-l-4 border-primary"
+            >
+                <HomeIcon />
+                Shop Dashboard
+            </button>
+            
+            {(isManager || (isHO && multiShopAccess)) && (
+                <button 
+                    onClick={() => switchShop(null)}
+                    className="flex items-center w-full text-left px-3 py-3 text-blue-700 font-bold bg-blue-50"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
+                    </svg>
+                    {isManager ? 'GO TO MANAGER PORTAL' : 'SWITCH LOCATION'}
+                </button>
+            )}
+
+            <div className="h-px bg-gray-100 my-2"></div>
             <button onClick={() => handleNavClick('receiveStock')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Receive Stock</button>
             <button onClick={() => handleNavClick('sales')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Sales</button>
             <button onClick={() => handleNavClick('salesHistory')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">History</button>
@@ -247,14 +290,6 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
                 Logout
               </button>
             </div>
-            {role === UserRole.SHOP_OPERATOR && allowedShops > 1 && (
-                <button 
-                    onClick={() => switchShop(null)}
-                    className="mt-3 w-full text-center text-sm bg-white border border-blue-300 text-blue-700 py-2 rounded font-medium shadow-sm"
-                >
-                    Switch Shop Location
-                </button>
-            )}
           </div>
         </div>
       )}

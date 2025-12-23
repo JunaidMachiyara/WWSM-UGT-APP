@@ -231,10 +231,15 @@ const Sales: React.FC = () => {
   }, [shopId, transactions, saleDate]); 
 
 
+  /**
+   * Fix for type comparison errors in handleItemChange.
+   * Using explicit checks for literal keys to ensure TS compiler correctly identifies overlaps.
+   */
   const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
     const newItems = [...items];
-    const item = newItems[index];
+    const item = { ...newItems[index] };
     
+    // Type-safe property handling
     if (field === 'productId') {
         const newProductId = value as string;
         item.productId = newProductId;
@@ -250,9 +255,17 @@ const Sales: React.FC = () => {
     } else if (field === 'locationId') {
         item.locationId = value as string;
         item.stock = getStockLevel(item.productId, item.locationId);
-    } else if (field === 'quantity' || field === 'salePrice') {
-        (item as any)[field] = Number(value) < 0 ? 0 : Number(value);
+    } else if (field === 'quantity') {
+        item.quantity = Number(value) < 0 ? 0 : Number(value);
+    } else if (field === 'salePrice') {
+        item.salePrice = Number(value) < 0 ? 0 : Number(value);
+    } else if (field === 'stock') {
+        item.stock = Number(value);
+    } else if (field === 'minSalePrice') {
+        item.minSalePrice = Number(value);
     }
+
+    newItems[index] = item;
     setItems(newItems);
   };
 

@@ -1,6 +1,7 @@
 
 export enum UserRole {
   HEAD_OFFICE = 'HEAD_OFFICE',
+  MANAGER = 'MANAGER',
   SHOP_OPERATOR = 'SHOP_OPERATOR',
 }
 
@@ -38,6 +39,7 @@ export enum AccountType {
 
 export enum AlertType {
     STOCK_DISCREPANCY = 'STOCK_DISCREPANCY',
+    PRICE_VIOLATION = 'PRICE_VIOLATION',
 }
 
 export interface Alert {

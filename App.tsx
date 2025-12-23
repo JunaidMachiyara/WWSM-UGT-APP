@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAppContext } from './context/AppContext';
 import HODashboard from './screens/HeadOffice/HODashboard';
 import ShopDashboard from './screens/Shop/ShopDashboard';
+import ManagerOverview from './screens/Manager/ManagerOverview';
 import { UserRole } from './types';
 
 const App: React.FC = () => {
@@ -137,14 +138,18 @@ const App: React.FC = () => {
     );
   }
 
-  // 2. Admin Mode - Main Dashboard
-  // If role is HO and no specific shopId is selected (Admin is not "impersonating" a shop)
+  // 2. Head Office Admin Mode
   if (role === UserRole.HEAD_OFFICE && !shopId) {
       return <HODashboard />;
   }
 
-  // 3. Shop Mode - Selection Screen
-  // If role is OPERATOR (or Admin acting as user eventually?) and NO shop selected yet.
+  // 3. Manager Overview Mode
+  // If role is MANAGER and NO specific shop selected yet.
+  if (role === UserRole.MANAGER && !shopId) {
+      return <ManagerOverview />;
+  }
+
+  // 4. Shop Selection Screen (For Single-Shop Operators or legacy)
   if (role === UserRole.SHOP_OPERATOR && !shopId) {
       const allowed = currentUser?.allowedShopIds || [];
       const availableShops = shops.filter(s => allowed.includes(s.id) && s.isActive);
@@ -192,9 +197,7 @@ const App: React.FC = () => {
       )
   }
 
-  // 4. Shop Dashboard
-  // This renders if (HO + shopId) OR (OP + shopId)
-  // Admin "impersonating" a shop view triggers this.
+  // 5. Active Shop View
   return <ShopDashboard />;
 };
 
