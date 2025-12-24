@@ -157,7 +157,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubShops = onSnapshot(collection(db, 'shops'), (s) => setShops(s.docs.map(d => ({ id: d.id, ...d.data() } as Shop))));
     const unsubProds = onSnapshot(collection(db, 'products'), (s) => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
     const unsubTrans = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Transaction))));
-    const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Shipment))));
+    const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => {
+        const data = d.data();
+        return { 
+            ...data,
+            id: d.id, // Document ID is the source of truth
+            date: data.date ? (data.date as any).toDate() : new Date() 
+        } as Shipment;
+    })));
     const unsubAlerts = onSnapshot(collection(db, 'alerts'), (s) => setAlerts(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Alert))));
     const unsubCust = onSnapshot(collection(db, 'customers'), (s) => setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as Customer))));
     const unsubWH = onSnapshot(collection(db, 'warehouses'), (s) => setWarehouses(s.docs.map(d => ({ id: d.id, ...d.data() } as Warehouse))));
@@ -191,7 +198,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setShopId(user.shopId || null);
       return true;
     }
-    // Hardcoded admin for initial access
     if (username === 'admin' && password === 'admin123') {
         const adminUser: User = { id: 'admin-id', name: 'System Admin', username: 'admin', role: UserRole.HEAD_OFFICE };
         setCurrentUser(adminUser);
@@ -287,7 +293,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const product = products.find(p => p.id === item.productId);
           const amountInBase = item.salePrice / rate;
           
-          // Check for price violation alert
           if (product && item.salePrice < product.minSalePrice * rate) {
               const alertRef = doc(collection(db, 'alerts'));
               batch.set(alertRef, {
@@ -431,11 +436,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const receiveShipment = async (payload: any) => {
+      const shipment = shipments.find(s => s.id === payload.shipmentId);
+      if (!shipment) {
+          console.error("Critical: Shipment object not found in local state during receiveShipment.");
+          return;
+      }
+
       const batch = writeBatch(db);
       const shipmentRef = doc(db, 'shipments', payload.shipmentId);
-      const shipment = shipments.find(s => s.id === payload.shipmentId);
-      if (!shipment) return;
 
+      // 1. Update Shipment Status
       batch.update(shipmentRef, { 
           status: ShipmentStatus.RECEIVED,
           items: shipment.items.map(item => {
@@ -444,6 +454,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           })
       });
 
+      // 2. Record Inventory Inflows
       payload.receivedItems.forEach((ri: any) => {
           const item = shipment.items.find(si => si.productId === ri.productId);
           if (item) {
@@ -461,6 +472,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
       });
       
+      // 3. Record Local Overheads
       const totalOverheads = (shipment.clearingCost || 0) + (shipment.customExpenseCost || 0) + (shipment.expectedDuty || 0);
       const totalQty = payload.receivedItems.reduce((s: number, i: any) => s + i.quantity, 0);
       if (totalOverheads > 0 && totalQty > 0) {
@@ -484,8 +496,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addExport = async (payload: any) => {
-      await addDoc(collection(db, 'shipments'), {
-          id: payload.shipmentId,
+      // Critical Fix: Use user-friendly Shipment ID as the Firestore Document ID
+      const shipmentId = payload.shipmentId;
+      const shipmentRef = doc(db, 'shipments', shipmentId);
+      
+      await setDoc(shipmentRef, {
           shopId: payload.shopId,
           date: serverTimestamp(),
           status: ShipmentStatus.PENDING,
@@ -632,7 +647,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
 
-// Fixed: Correctly exported useAppContext hook
 export const useAppContext = () => {
   const context = useContext(AppContext);
   if (context === undefined) {
