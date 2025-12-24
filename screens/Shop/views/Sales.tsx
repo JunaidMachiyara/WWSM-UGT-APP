@@ -3,11 +3,19 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { SaleItem } from '../../../context/AppContext';
 import { TransactionType, AccountType } from '../../../types';
+import { ShopView } from '../ShopDashboard';
 
-interface InvoiceItem extends SaleItem {
+interface SalesProps {
+  onNavigate?: (view: ShopView) => void;
+}
+
+interface InvoiceItem {
+  productId: string;
+  quantity: number | '';
+  salePrice: number | '';
+  locationId: string;
   stock: number;
   minSalePrice?: number;
-  locationId: string;
 }
 
 interface TooltipProps {
@@ -44,7 +52,6 @@ const ExclamationIcon: React.FC<ExclamationIconProps> = ({ colorClass = 'text-gr
     </svg>
 );
 
-// --- Searchable Select Component ---
 interface Option {
     id: string;
     name: string;
@@ -138,40 +145,36 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
     );
 };
 
-
-const Sales: React.FC = () => {
+const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const { shopId, products, recordSale, customers, addCustomer, addProduct, addShopAccount, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
   
   const [items, setItems] = useState<InvoiceItem[]>([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
   const [customerId, setCustomerId] = useState('');
-  const [cashPaid, setCashPaid] = useState(0);
-  const [advanceApplied, setAdvanceApplied] = useState(0);
+  const [cashPaid, setCashPaid] = useState<number | ''>(0);
+  const [advanceApplied, setAdvanceApplied] = useState<number | ''>(0);
   const [saleDate, setSaleDate] = useState(new Date().toISOString().split('T')[0]);
   const [paymentAccountId, setPaymentAccountId] = useState('');
   const [manualRef, setManualRef] = useState('');
   const [invoiceNumber, setInvoiceNumber] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
   
-  // Quick Add Customer State
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
 
-  // Quick Add Product State
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [newProductCategory, setNewProductCategory] = useState('');
-  const [newProductHoCost, setNewProductHoCost] = useState(0);
-  const [newProductMinSalePrice, setNewProductMinSalePrice] = useState(0);
-  const [newProductWeight, setNewProductWeight] = useState(0);
+  const [newProductHoCost, setNewProductHoCost] = useState<number | ''>(0);
+  const [newProductMinSalePrice, setNewProductMinSalePrice] = useState<number | ''>(0);
+  const [newProductWeight, setNewProductWeight] = useState<number | ''>(0);
 
-  // Quick Add Account State
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountType, setNewAccountType] = useState<AccountType>(AccountType.CASH);
   const [newBankName, setNewBankName] = useState('');
   const [newAccountNumber, setNewAccountNumber] = useState('');
-  const [newOpeningBalance, setNewOpeningBalance] = useState(0);
+  const [newOpeningBalance, setNewOpeningBalance] = useState<number | ''>(0);
 
   const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
   const currentShopAccounts = shopAccounts.filter(acc => acc.shopId === shopId);
@@ -192,25 +195,19 @@ const Sales: React.FC = () => {
   }, [shops, warehouses, shopId]);
 
   useEffect(() => {
-    // Reset advance applied if customer changes
     setAdvanceApplied(0);
   }, [customerId]);
 
-  // Auto-Generate Invoice Number logic
   useEffect(() => {
     if (!shopId) return;
-
     const generateInvoiceNumber = () => {
         const today = new Date();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const yy = String(today.getFullYear()).slice(-2);
         const dateSuffix = `${mm}${dd}${yy}`;
-
         const salesTransactions = transactions.filter(t => t.shopId === shopId && (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE));
-
         let maxSeq = 1000;
-        
         salesTransactions.forEach(t => {
             if (t.invoiceId) {
                 const match = t.invoiceId.match(/^(\d+)-/);
@@ -222,24 +219,16 @@ const Sales: React.FC = () => {
                 }
             }
         });
-
         const nextSeq = maxSeq + 1;
         return `${nextSeq}-${dateSuffix}`;
     };
-
     setInvoiceNumber(generateInvoiceNumber());
   }, [shopId, transactions, saleDate]); 
 
-
-  /**
-   * Fix for type comparison errors in handleItemChange.
-   * Using explicit checks for literal keys to ensure TS compiler correctly identifies overlaps.
-   */
-  const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
+  const handleItemChange = (index: number, field: keyof InvoiceItem, value: any) => {
     const newItems = [...items];
     const item = { ...newItems[index] };
     
-    // Type-safe property handling
     if (field === 'productId') {
         const newProductId = value as string;
         item.productId = newProductId;
@@ -247,8 +236,7 @@ const Sales: React.FC = () => {
         const product = products.find(p => p.id === newProductId);
         if(product) {
             item.minSalePrice = product.minSalePrice * (currentShopCurrency.rate || 1);
-            // Default to min sale price if price is 0
-            if (item.salePrice === 0) {
+            if (item.salePrice === 0 || item.salePrice === '') {
                 item.salePrice = product.minSalePrice * (currentShopCurrency.rate || 1);
             }
         }
@@ -256,13 +244,9 @@ const Sales: React.FC = () => {
         item.locationId = value as string;
         item.stock = getStockLevel(item.productId, item.locationId);
     } else if (field === 'quantity') {
-        item.quantity = Number(value) < 0 ? 0 : Number(value);
+        item.quantity = value === '' ? '' : (Number(value) < 0 ? 0 : Number(value));
     } else if (field === 'salePrice') {
-        item.salePrice = Number(value) < 0 ? 0 : Number(value);
-    } else if (field === 'stock') {
-        item.stock = Number(value);
-    } else if (field === 'minSalePrice') {
-        item.minSalePrice = Number(value);
+        item.salePrice = value === '' ? '' : (Number(value) < 0 ? 0 : Number(value));
     }
 
     newItems[index] = item;
@@ -289,29 +273,36 @@ const Sales: React.FC = () => {
     setManualRef('');
   };
 
-  const totalAmount = items.reduce((sum, item) => {
-    if (item.productId && item.quantity > 0 && item.salePrice > 0) {
-        return sum + ((item.salePrice || 0) * (item.quantity || 1));
+  const totalAmount = useMemo(() => {
+    return items.reduce((sum, item) => {
+      if (item.productId && Number(item.quantity) > 0 && Number(item.salePrice) > 0) {
+          return sum + (Number(item.salePrice) * Number(item.quantity));
+      }
+      return sum;
+    }, 0);
+  }, [items]);
+
+  const creditAmount = totalAmount - (Number(cashPaid) || 0) - (Number(advanceApplied) || 0);
+
+  const handleAdvanceChange = (value: string) => {
+    if (value === '') {
+        setAdvanceApplied('');
+        return;
     }
-    return sum;
-  }, 0);
-
-  const creditAmount = totalAmount - (cashPaid || 0) - (advanceApplied || 0);
-
-  const handleAdvanceChange = (value: number) => {
+    const val = parseFloat(value);
     const localAdvanceBalance = customerAdvanceBalance * currentShopCurrency.rate;
-    const validValue = Math.max(0, Math.min(value, localAdvanceBalance, totalAmount));
+    const validValue = Math.max(0, Math.min(val, localAdvanceBalance, totalAmount));
     setAdvanceApplied(validValue);
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const itemsWithProduct = items.filter(i => i.productId);
     if (itemsWithProduct.length === 0) {
         alert('Please add at least one item to the invoice by selecting a product.');
         return;
     }
-    const invalidItems = itemsWithProduct.filter(i => i.quantity <= 0 || i.salePrice <= 0 || !i.locationId);
+    const invalidItems = itemsWithProduct.filter(i => Number(i.quantity) <= 0 || Number(i.salePrice) <= 0 || !i.locationId);
     if (invalidItems.length > 0) {
         alert('Please ensure all added items have a dispatch location, a quantity and sale price greater than zero.');
         return;
@@ -320,29 +311,40 @@ const Sales: React.FC = () => {
       alert('Please select a customer and a date for the invoice.');
       return;
     }
-    if (cashPaid < 0) {
+    if (Number(cashPaid) < 0) {
       alert('Cash paid amount cannot be negative.');
       return;
     }
-    if (cashPaid > 0 && !paymentAccountId) {
+    if (Number(cashPaid) > 0 && !paymentAccountId) {
         alert('Please select an account to deposit the cash payment into.');
         return;
     }
-    const dateForTransaction = new Date(saleDate + 'T00:00:00');
-    recordSale({
-      shopId,
-      customerId,
-      invoiceNumber,
-      manualReference: manualRef,
-      items: itemsWithProduct,
-      cashPaid: cashPaid || 0,
-      advanceApplied: advanceApplied || 0,
-      date: dateForTransaction,
-      paymentAccountId,
-    });
-    setSuccessMessage(`Sale recorded successfully! Invoice #${invoiceNumber}`);
-    resetForm();
-    setTimeout(() => setSuccessMessage(''), 5000);
+    
+    try {
+        const dateForTransaction = new Date(saleDate + 'T00:00:00');
+        await recordSale({
+          shopId,
+          customerId,
+          invoiceNumber,
+          manualReference: manualRef,
+          items: itemsWithProduct.map(i => ({
+              productId: i.productId,
+              quantity: Number(i.quantity),
+              salePrice: Number(i.salePrice),
+              locationId: i.locationId
+          })),
+          cashPaid: Number(cashPaid) || 0,
+          advanceApplied: Number(advanceApplied) || 0,
+          date: dateForTransaction,
+          paymentAccountId,
+        });
+        
+        setShowSuccessModal(true);
+        resetForm();
+    } catch (err) {
+        console.error(err);
+        alert('Failed to record sale. Please try again.');
+    }
   };
 
   const handleQuickAddCustomer = async () => {
@@ -352,7 +354,7 @@ const Sales: React.FC = () => {
       }
       if (!shopId) return;
       try {
-          addCustomer({
+          await addCustomer({
               name: newCustomerName,
               phone: newCustomerPhone,
               shopId,
@@ -368,17 +370,17 @@ const Sales: React.FC = () => {
   };
 
   const handleQuickAddProduct = async () => {
-      if (!newProductName.trim() || !newProductCategory.trim() || newProductHoCost <= 0 || newProductMinSalePrice <= 0) {
+      if (!newProductName.trim() || !newProductCategory.trim() || Number(newProductHoCost) <= 0 || Number(newProductMinSalePrice) <= 0) {
           alert('Please fill all product fields correctly. Costs and prices must be greater than zero.');
           return;
       }
       try {
-          addProduct({
+          await addProduct({
               name: newProductName,
               category: newProductCategory,
-              hoCost: newProductHoCost,
-              minSalePrice: newProductMinSalePrice,
-              weight: newProductWeight
+              hoCost: Number(newProductHoCost),
+              minSalePrice: Number(newProductMinSalePrice),
+              weight: Number(newProductWeight) || 0
           });
           setNewProductName('');
           setNewProductCategory('');
@@ -403,13 +405,13 @@ const Sales: React.FC = () => {
     }
 
     try {
-        addShopAccount({
+        await addShopAccount({
             shopId,
             accountName: newAccountName,
             accountType: newAccountType,
             bankName: newAccountType === AccountType.BANK ? newBankName : undefined,
             accountNumber: newAccountType === AccountType.BANK ? newAccountNumber : undefined,
-            openingBalance: newOpeningBalance,
+            openingBalance: Number(newOpeningBalance) || 0,
         });
         setNewAccountName('');
         setNewAccountType(AccountType.CASH);
@@ -426,11 +428,7 @@ const Sales: React.FC = () => {
   return (
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-7xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">Record New Invoice</h2>
-      {successMessage && (
-        <div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6" role="alert">
-          <p>{successMessage}</p>
-        </div>
-      )}
+      
       <form onSubmit={handleSubmit} className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <div>
@@ -471,8 +469,8 @@ const Sales: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Invoice Items</h3>
           <div className="space-y-4">
             {items.map((item, index) => {
-                const hasStockError = item.quantity > item.stock && item.stock >= 0 && !!item.productId;
-                const hasPriceWarning = item.salePrice > 0 && item.minSalePrice && item.salePrice < item.minSalePrice;
+                const hasStockError = Number(item.quantity) > item.stock && item.stock >= 0 && !!item.productId;
+                const hasPriceWarning = Number(item.salePrice) > 0 && item.minSalePrice && Number(item.salePrice) < item.minSalePrice;
 
                 return (
               <div key={index} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end border-t border-gray-200 pt-4 first:pt-0 first:border-none">
@@ -527,7 +525,7 @@ const Sales: React.FC = () => {
                 </div>
                 <div className="md:col-span-2 text-right">
                     <label className="block text-sm font-medium text-gray-700">Total</label>
-                    <p className="mt-1 p-2 font-semibold text-lg">{currentShopCurrency.symbol}{((item.quantity || 1) * (item.salePrice || 0)).toFixed(2)}</p>
+                    <p className="mt-1 p-2 font-semibold text-lg">{currentShopCurrency.symbol}{((Number(item.quantity) || 0) * (Number(item.salePrice) || 0)).toFixed(2)}</p>
                 </div>
                 <div className="md:col-span-1">
                   <label className="block text-sm font-medium text-transparent hidden md:block">&nbsp;</label>
@@ -550,7 +548,7 @@ const Sales: React.FC = () => {
                 {customerAdvanceBalance > 0 && (
                      <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
                         <label htmlFor="advanceApplied" className="text-sm font-medium text-blue-800">Available Advance Balance: <span className="font-bold">{formatCurrency(customerAdvanceBalance)}</span></label>
-                        <input type="number" id="advanceApplied" value={advanceApplied} onChange={e => handleAdvanceChange(parseFloat(e.target.value) || 0)} className="mt-2 w-full border border-blue-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" step="0.01" max={Math.min(customerAdvanceBalance * currentShopCurrency.rate, totalAmount)} />
+                        <input type="number" id="advanceApplied" value={advanceApplied} onChange={e => handleAdvanceChange(e.target.value)} className="mt-2 w-full border border-blue-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" step="0.01" />
                     </div>
                 )}
 
@@ -558,9 +556,9 @@ const Sales: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
                     <div>
                         <label htmlFor="cashPaid" className="text-sm font-medium text-gray-700">Amount Paid Now ({currentShopCurrency.symbol})</label>
-                        <input type="number" id="cashPaid" value={cashPaid} onChange={e => setCashPaid(parseFloat(e.target.value) || 0)} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" step="0.01" />
+                        <input type="number" id="cashPaid" value={cashPaid} onChange={e => setCashPaid(e.target.value === '' ? '' : parseFloat(e.target.value))} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" min="0" step="0.01" />
                     </div>
-                     {cashPaid > 0 && (
+                     {Number(cashPaid) > 0 && (
                         <div>
                             <div className="flex justify-between items-center mb-1">
                                 <label htmlFor="paymentAccount" className="text-sm font-medium text-gray-700">Deposit To Account</label>
@@ -602,6 +600,36 @@ const Sales: React.FC = () => {
           </button>
         </div>
       </form>
+
+      {/* Success Confirmation Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-[100] p-4 animate-fade-in">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center transform transition-all animate-scale-up">
+                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <svg className="w-12 h-12 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h3 className="text-2xl font-black text-gray-900 mb-2">Sales Recorded!</h3>
+                <p className="text-gray-500 mb-8 font-medium">Invoice generated successfully.</p>
+                
+                <div className="space-y-3">
+                    <button 
+                        onClick={() => setShowSuccessModal(false)}
+                        className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark transition-all shadow-lg active:scale-95"
+                    >
+                        Record Another
+                    </button>
+                    <button 
+                        onClick={() => onNavigate?.('dashboard')}
+                        className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all active:scale-95"
+                    >
+                        Go to Home
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* Quick Add Customer Modal */}
       {showAddCustomerModal && (
@@ -688,7 +716,7 @@ const Sales: React.FC = () => {
                             <input 
                                 type="number" 
                                 value={newProductHoCost} 
-                                onChange={e => setNewProductHoCost(parseFloat(e.target.value) || 0)} 
+                                onChange={e => setNewProductHoCost(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                                 className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                                 min="0" step="0.01"
                             />
@@ -698,7 +726,7 @@ const Sales: React.FC = () => {
                             <input 
                                 type="number" 
                                 value={newProductMinSalePrice} 
-                                onChange={e => setNewProductMinSalePrice(parseFloat(e.target.value) || 0)} 
+                                onChange={e => setNewProductMinSalePrice(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                                 className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                                 min="0" step="0.01"
                             />
@@ -709,7 +737,7 @@ const Sales: React.FC = () => {
                         <input 
                             type="number" 
                             value={newProductWeight} 
-                            onChange={e => setNewProductWeight(parseFloat(e.target.value) || 0)} 
+                            onChange={e => setNewProductWeight(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                             className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                             min="0" step="0.01"
                         />
@@ -794,7 +822,7 @@ const Sales: React.FC = () => {
                         <input 
                             type="number" 
                             value={newOpeningBalance} 
-                            onChange={e => setNewOpeningBalance(parseFloat(e.target.value) || 0)} 
+                            onChange={e => setNewOpeningBalance(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                             className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
                             min="0" step="0.01"
                         />

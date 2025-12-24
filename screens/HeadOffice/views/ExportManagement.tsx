@@ -66,21 +66,15 @@ const ExportManagement: React.FC = () => {
     }
 
     const generateShipmentId = () => {
-        // Format: 5001 + "-" + MMDDYY + "-" + Shop Name
         const today = new Date();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
         const dd = String(today.getDate()).padStart(2, '0');
         const yy = String(today.getFullYear()).slice(-2);
         const dateSuffix = `${mm}${dd}${yy}`;
 
-        // Find max sequence starting with 5001
-        // Note: We scan ALL shipments to maintain a global sequence for Head Office Exports, 
-        // or you could filter by shop if you want shop-specific sequences.
-        // Typically HO Exports have a central sequence.
         let maxSeq = 5000;
         
         shipments.forEach(s => {
-            // Regex to match pattern starting with digits
             const match = s.id.match(/^(\d+)-/);
             if (match && match[1]) {
                 const seq = parseInt(match[1]);
@@ -92,8 +86,6 @@ const ExportManagement: React.FC = () => {
 
         const nextSeq = maxSeq + 1;
         const shopName = shops.find(s => s.id === shopId)?.name || 'SHOP';
-        
-        // Clean shop name for ID (remove spaces/special chars)
         const safeShopName = shopName.replace(/[^a-zA-Z0-9]/g, '');
 
         return `${nextSeq}-${dateSuffix}-${safeShopName}`;
@@ -110,8 +102,6 @@ const ExportManagement: React.FC = () => {
     if (field === 'productId') {
         const productId = value as string;
         item.productId = productId;
-        
-        // Populate Landed Cost with Head Office Cost (Invoice Price)
         const selectedProduct = products.find(p => p.id === productId);
         if (selectedProduct) {
             item.landedCost = selectedProduct.hoCost;
@@ -120,9 +110,6 @@ const ExportManagement: React.FC = () => {
         item.quantity = Number(value) < 0 ? 0 : Number(value);
     } else if (field === 'landedCost') {
         item.landedCost = Number(value);
-    } else {
-        // @ts-ignore
-        item[field] = value;
     }
     setItems(newItems);
   };
@@ -136,14 +123,12 @@ const ExportManagement: React.FC = () => {
   };
 
   const addItemRow = () => {
-    const newItem = { productId: '', quantity: 1, landedCost: 0 };
-    setItems([...items, newItem]);
+    setItems([...items, { productId: '', quantity: 1, landedCost: 0 }]);
   };
 
   const removeItemRow = (index: number) => {
     if (items.length > 1) {
-      const newItems = items.filter((_, i) => i !== index);
-      setItems(newItems);
+      setItems(items.filter((_, i) => i !== index));
     }
   };
 
@@ -159,11 +144,10 @@ const ExportManagement: React.FC = () => {
     setExpectedDuty(0);
   };
 
-  // Validates form and opens the Invoice Modal
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!shopId || items.some(item => !item.productId || item.quantity <= 0 || item.landedCost <= 0)) {
-        alert('Please select a shop and fill all item details correctly (quantity and cost must be greater than zero).');
+        alert('Please select a shop and fill all item details correctly.');
         return;
     }
     setShowInvoice(true);
@@ -175,12 +159,18 @@ const ExportManagement: React.FC = () => {
       setPrintDisabled(true);
   };
 
-  // Finalizes export after invoice review
   const handleFinalSubmit = () => {
+    // MAP quantity to expectedQuantity for consistency with rest of app
+    const shipmentItems = items.map(item => ({
+        productId: item.productId,
+        expectedQuantity: item.quantity,
+        landedCost: item.landedCost
+    }));
+
     addExport({
         shipmentId,
         shopId,
-        items,
+        items: shipmentItems,
         freightForwarder: { id: ffId, amount: ffAmount },
         clearingAgent: { id: caId, amount: caAmount },
         customExpense: { typeId: ceTypeId, amount: ceAmount },
@@ -205,8 +195,8 @@ const ExportManagement: React.FC = () => {
             expectedDuty: editCosts.duty
         });
         setIsUpdating(false);
-        alert("Shipment costs updated successfully! Inventory valuation has been adjusted if goods were already received.");
-        setSelectedShipment(null); // Close modal
+        alert("Shipment costs updated successfully!");
+        setSelectedShipment(null);
     } catch (e) {
         console.error(e);
         setIsUpdating(false);
@@ -215,14 +205,8 @@ const ExportManagement: React.FC = () => {
   };
 
   const sortedShipments = [...shipments].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-  // Invoice Calculation
   const totalInvoiceValue = items.reduce((sum, item) => sum + (item.quantity * item.landedCost), 0);
-  
-  // Billable by HO: Goods + Freight
   const billableTotal = totalInvoiceValue + ffAmount;
-  
-  // Local Costs (Estimates) - Not on Invoice: Clearing + Custom + Duty
   const localTotal = caAmount + ceAmount + expectedDuty;
 
   return (
@@ -436,7 +420,6 @@ const ExportManagement: React.FC = () => {
                             </tfoot>
                         </table>
 
-                        {/* Local Payables Section - Information Only */}
                         {(localTotal > 0) && (
                             <div className="mt-8 border-t-2 border-dashed border-gray-300 pt-4 bg-yellow-50 p-4 rounded">
                                 <h4 className="text-sm font-bold text-gray-700 uppercase mb-2">Estimated Local Payables (Not included in Invoice)</h4>
@@ -528,7 +511,6 @@ const ExportManagement: React.FC = () => {
                                     value={editCosts.freight} 
                                     onChange={e => setEditCosts({...editCosts, freight: Number(e.target.value)})}
                                     className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
-                                    style={{ backgroundColor: 'white', color: 'black' }}
                                 />
                             </div>
                             <div>
@@ -538,7 +520,6 @@ const ExportManagement: React.FC = () => {
                                     value={editCosts.clearing} 
                                     onChange={e => setEditCosts({...editCosts, clearing: Number(e.target.value)})}
                                     className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
-                                    style={{ backgroundColor: 'white', color: 'black' }}
                                 />
                             </div>
                             <div>
@@ -548,7 +529,6 @@ const ExportManagement: React.FC = () => {
                                     value={editCosts.custom} 
                                     onChange={e => setEditCosts({...editCosts, custom: Number(e.target.value)})}
                                     className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
-                                    style={{ backgroundColor: 'white', color: 'black' }}
                                 />
                             </div>
                             <div>
@@ -558,7 +538,6 @@ const ExportManagement: React.FC = () => {
                                     value={editCosts.duty} 
                                     onChange={e => setEditCosts({...editCosts, duty: Number(e.target.value)})}
                                     className="mt-1 w-full border border-gray-300 rounded px-2 py-1 bg-white text-black"
-                                    style={{ backgroundColor: 'white', color: 'black' }}
                                 />
                             </div>
                         </div>
@@ -576,7 +555,7 @@ const ExportManagement: React.FC = () => {
                     
                     <h4 className="text-md font-semibold text-gray-700 mb-2">Items</h4>
                     <div className="border rounded-lg overflow-hidden border-gray-200">
-                        <table className="min-w-full bg-white text-black" style={{ backgroundColor: 'white', color: 'black' }}>
+                        <table className="min-w-full bg-white text-black">
                             <thead className="bg-gray-50 text-xs uppercase text-gray-500">
                                 <tr>
                                     <th className="px-4 py-2 text-left">Product</th>
@@ -589,16 +568,17 @@ const ExportManagement: React.FC = () => {
                             <tbody className="divide-y divide-gray-200 text-sm">
                                 {selectedShipment.items.map(item => {
                                     const isReceived = selectedShipment.status === ShipmentStatus.RECEIVED;
-                                    const hasDiscrepancy = isReceived && item.expectedQuantity !== item.receivedQuantity;
+                                    const expected = item.expectedQuantity ?? (item as any).quantity ?? 0;
+                                    const hasDiscrepancy = isReceived && expected !== item.receivedQuantity;
                                     return (
                                         <tr key={item.productId} className={hasDiscrepancy ? 'bg-red-50' : ''}>
-                                            <td className="px-4 py-3 font-medium text-black" style={{ color: 'black' }}>{products.find(p => p.id === item.productId)?.name}</td>
-                                            <td className="px-4 py-3 text-center text-black" style={{ color: 'black' }}>{item.expectedQuantity}</td>
-                                            <td className="px-4 py-3 text-center font-semibold text-black" style={{ color: 'black' }}>
+                                            <td className="px-4 py-3 font-medium text-black">{products.find(p => p.id === item.productId)?.name}</td>
+                                            <td className="px-4 py-3 text-center text-black">{expected}</td>
+                                            <td className="px-4 py-3 text-center font-semibold text-black">
                                                 {isReceived ? item.receivedQuantity : <span className="text-gray-400">N/A</span>}
                                             </td>
-                                            <td className="px-4 py-3 text-right text-black" style={{ color: 'black' }}>${item.landedCost.toFixed(2)}</td>
-                                            <td className="px-4 py-3 text-right font-semibold text-black" style={{ color: 'black' }}>${(item.landedCost * item.expectedQuantity).toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right text-black">${item.landedCost.toFixed(2)}</td>
+                                            <td className="px-4 py-3 text-right font-semibold text-black">${(item.landedCost * expected).toFixed(2)}</td>
                                         </tr>
                                     );
                                 })}
