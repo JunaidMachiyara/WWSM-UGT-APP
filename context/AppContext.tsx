@@ -152,19 +152,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isDemoMode] = useState(false);
   const [connectionError] = useState<string | null>(null);
 
-  // Set up Firebase listeners
   useEffect(() => {
     const unsubShops = onSnapshot(collection(db, 'shops'), (s) => setShops(s.docs.map(d => ({ id: d.id, ...d.data() } as Shop))));
     const unsubProds = onSnapshot(collection(db, 'products'), (s) => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
     const unsubTrans = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Transaction))));
+    
+    // CRITICAL: Ensure the ID in the object is the Firestore Document ID
     const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => {
         const data = d.data();
         return { 
             ...data,
-            id: d.id, // Document ID is the source of truth
+            id: d.id, 
             date: data.date ? (data.date as any).toDate() : new Date() 
         } as Shipment;
     })));
+
     const unsubAlerts = onSnapshot(collection(db, 'alerts'), (s) => setAlerts(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Alert))));
     const unsubCust = onSnapshot(collection(db, 'customers'), (s) => setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as Customer))));
     const unsubWH = onSnapshot(collection(db, 'warehouses'), (s) => setWarehouses(s.docs.map(d => ({ id: d.id, ...d.data() } as Warehouse))));
@@ -218,7 +220,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setShopId(id);
   }, []);
 
-  // CRUD Operations
   const addShop = async (shop: Omit<Shop, 'id'>) => { await addDoc(collection(db, 'shops'), shop); };
   const updateShop = async (id: string, data: Partial<Shop>) => { await updateDoc(doc(db, 'shops', id), data); };
   const deleteShop = async (id: string) => { await deleteDoc(doc(db, 'shops', id)); };
@@ -235,18 +236,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await batch.commit();
   };
 
-  const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { await addDoc(collection(db, 'accounts'), account); };
+  const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { 
+    try {
+        console.log('AppContext: addShopAccount attempt...', account);
+        // Ensure numeric fields are valid
+        const safeAccount = {
+            ...account,
+            openingBalance: Number(account.openingBalance) || 0
+        };
+        await addDoc(collection(db, 'accounts'), safeAccount); 
+    } catch (e) {
+        console.error('AppContext: Error in addShopAccount:', e);
+        throw e;
+    }
+  };
+
   const updateCurrency = async (data: { id: string, rate: number }) => { 
       const curr = currencies.find(c => c.id === data.id);
-      if (curr) await updateDoc(doc(db, 'currencies', curr.id), { rate: data.rate }); 
+      if (curr) await updateDoc(doc(db, 'currencies', curr.id), { rate: Number(data.rate) || 1 }); 
   };
-  const addCurrency = async (currency: Currency) => { await setDoc(doc(db, 'currencies', currency.id), currency); };
+  const addCurrency = async (currency: Currency) => { 
+      await setDoc(doc(db, 'currencies', currency.id), { ...currency, rate: Number(currency.rate) || 1 }); 
+  };
 
-  // Stock and Balance Helpers
   const getStockLevel = useCallback((productId: string, locationId?: string) => {
     let stock = 0;
     transactions.forEach(t => {
       if (t.productId === productId && (!locationId || t.locationId === locationId || (!t.locationId && locationId === t.shopId))) {
+        // Fix: corrected typo TransactionType.OPEN_STOCK to TransactionType.OPENING_STOCK
         if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
           stock += (t.quantity || 0);
         } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
@@ -261,15 +278,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let balance = 0;
     transactions.forEach(t => {
         if (t.customerId === customerId) {
-            if (t.type === TransactionType.CUSTOMER_ADVANCE) balance += t.amount;
-            if (t.type === TransactionType.ADVANCE_USAGE) balance -= t.amount;
+            if (t.type === TransactionType.CUSTOMER_ADVANCE) balance += (Number(t.amount) || 0);
+            if (t.type === TransactionType.ADVANCE_USAGE) balance -= (Number(t.amount) || 0);
         }
     });
     return balance;
   }, [transactions]);
 
   const formatCurrency = useCallback((amountInBase: number) => {
-    const amount = amountInBase * currentShopCurrency.rate;
+    const rate = Number(currentShopCurrency.rate) || 1;
+    const amount = amountInBase * rate;
     return `${currentShopCurrency.symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, [currentShopCurrency]);
 
@@ -281,17 +299,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await updateDoc(doc(db, 'alerts', id), { isRead: true });
   };
 
-  // Transaction Handlers
   const recordSale = async (payload: any) => {
       const batch = writeBatch(db);
       const { shopId, customerId, invoiceNumber, items, cashPaid, advanceApplied, date, paymentAccountId, manualReference } = payload;
-      
+      const rate = Number(currentShopCurrency.rate) || 1;
       const shop = shops.find(s => s.id === shopId);
-      const rate = currentShopCurrency.rate;
 
       items.forEach((item: SaleItem) => {
           const product = products.find(p => p.id === item.productId);
-          const amountInBase = item.salePrice / rate;
+          const unitPriceBase = (Number(item.salePrice) || 0) / rate;
           
           if (product && item.salePrice < product.minSalePrice * rate) {
               const alertRef = doc(collection(db, 'alerts'));
@@ -314,14 +330,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               productId: item.productId,
               type: TransactionType.CASH_SALE,
               description: `Sale of ${product?.name}`,
-              amount: amountInBase,
-              quantity: item.quantity,
+              amount: unitPriceBase,
+              quantity: Number(item.quantity) || 0,
               date: Timestamp.fromDate(date),
               locationId: item.locationId || shopId
           });
       });
 
-      if (cashPaid > 0) {
+      if (Number(cashPaid) > 0) {
           const receiptRef = doc(collection(db, 'transactions'));
           batch.set(receiptRef, {
               shopId,
@@ -329,13 +345,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               invoiceId: invoiceNumber,
               type: TransactionType.SALES_RECEIPT,
               description: `Payment for Invoice #${invoiceNumber}`,
-              amount: cashPaid / rate,
+              amount: (Number(cashPaid) || 0) / rate,
               date: Timestamp.fromDate(date),
               paymentAccountId
           });
       }
 
-      if (advanceApplied > 0) {
+      if (Number(advanceApplied) > 0) {
           const advanceRef = doc(collection(db, 'transactions'));
           batch.set(advanceRef, {
               shopId,
@@ -343,35 +359,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               invoiceId: invoiceNumber,
               type: TransactionType.ADVANCE_USAGE,
               description: `Advance applied to Invoice #${invoiceNumber}`,
-              amount: advanceApplied / rate,
+              amount: (Number(advanceApplied) || 0) / rate,
               date: Timestamp.fromDate(date)
           });
       }
-
       await batch.commit();
   };
 
   const recordPayment = async (payload: any) => {
-      const rate = currentShopCurrency.rate;
+      const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'transactions'), {
           shopId: payload.shopId,
           customerId: payload.customerId,
           type: TransactionType.SALES_RECEIPT,
           description: payload.notes || 'Customer Payment',
-          amount: payload.amount / rate,
+          amount: (Number(payload.amount) || 0) / rate,
           date: Timestamp.fromDate(payload.date),
           paymentAccountId: payload.paymentAccountId
       });
   };
 
   const addExpense = async (payload: any) => {
-      const rate = currentShopCurrency.rate;
+      const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'transactions'), {
           shopId: payload.shopId,
           expenseAccountId: payload.expenseAccountId,
           type: TransactionType.EXPENSE,
           description: payload.description || 'Shop Expense',
-          amount: payload.amount / rate,
+          amount: (Number(payload.amount) || 0) / rate,
           date: Timestamp.fromDate(payload.date),
           paymentAccountId: payload.paymentAccountId
       });
@@ -387,7 +402,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           productId: payload.productId,
           type: TransactionType.STOCK_TRANSFER_OUT,
           description: `Transfer to ${warehouses.find(w => w.id === payload.toLocationId)?.name || 'Other Location'}`,
-          quantity: payload.quantity,
+          quantity: Number(payload.quantity) || 0,
           amount: 0,
           date: Timestamp.fromDate(payload.date),
           locationId: payload.fromLocationId
@@ -398,7 +413,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           productId: payload.productId,
           type: TransactionType.STOCK_TRANSFER_IN,
           description: `Transfer from ${warehouses.find(w => w.id === payload.fromLocationId)?.name || 'Other Location'}`,
-          quantity: payload.quantity,
+          quantity: Number(payload.quantity) || 0,
           amount: 0,
           date: Timestamp.fromDate(payload.date),
           locationId: payload.toLocationId
@@ -407,27 +422,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addAsset = async (asset: Omit<Asset, 'id' | 'status'>) => {
-      const rate = currentShopCurrency.rate;
+      const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'assets'), { ...asset, status: AssetStatus.ACTIVE });
       await addDoc(collection(db, 'transactions'), {
           shopId: asset.shopId,
           expenseAccountId: asset.expenseAccountId,
           type: TransactionType.EXPENSE,
           description: `Asset Purchase: ${asset.name}`,
-          amount: asset.purchaseCost / rate,
+          amount: (Number(asset.purchaseCost) || 0) / rate,
           date: Timestamp.fromDate(asset.purchaseDate),
           paymentAccountId: asset.paymentAccountId
       });
   };
 
   const recordAdvance = async (payload: any) => {
-    const rate = currentShopCurrency.rate;
+    const rate = Number(currentShopCurrency.rate) || 1;
     await addDoc(collection(db, 'transactions'), {
         shopId: payload.shopId,
         customerId: payload.customerId,
         type: TransactionType.CUSTOMER_ADVANCE,
         description: 'Customer Advance Payment',
-        amount: payload.amount / rate,
+        amount: (Number(payload.amount) || 0) / rate,
         date: Timestamp.fromDate(payload.date),
         paymentAccountId: payload.paymentAccountId,
         advanceForItems: payload.advanceForItems,
@@ -435,26 +450,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const receiveShipment = async (payload: any) => {
+  const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string }) => {
+      // Find shipment using the ID from the payload (which is the Firestore Document Name)
       const shipment = shipments.find(s => s.id === payload.shipmentId);
       if (!shipment) {
-          console.error("Critical: Shipment object not found in local state during receiveShipment.");
-          return;
+          console.error("Critical: Shipment object not found in local state for ID:", payload.shipmentId);
+          throw new Error("Shipment ID not found in system state. Please refresh.");
       }
 
       const batch = writeBatch(db);
+      // Use setDoc with merge to be more resilient than update
       const shipmentRef = doc(db, 'shipments', payload.shipmentId);
 
-      // 1. Update Shipment Status
-      batch.update(shipmentRef, { 
+      batch.set(shipmentRef, { 
           status: ShipmentStatus.RECEIVED,
           items: shipment.items.map(item => {
               const received = payload.receivedItems.find((ri: any) => ri.productId === item.productId);
-              return { ...item, receivedQuantity: received ? received.quantity : 0 };
+              return { ...item, receivedQuantity: Number(received?.quantity) || 0 };
           })
-      });
+      }, { merge: true });
 
-      // 2. Record Inventory Inflows
       payload.receivedItems.forEach((ri: any) => {
           const item = shipment.items.find(si => si.productId === ri.productId);
           if (item) {
@@ -464,17 +479,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   productId: ri.productId,
                   type: TransactionType.IMPORT,
                   description: `Import from HO: Shipment #${shipment.id}`,
-                  quantity: ri.quantity,
-                  amount: item.landedCost,
+                  quantity: Number(ri.quantity) || 0,
+                  amount: Number(item.landedCost) || 0,
                   date: Timestamp.now(),
                   locationId: payload.locationId
               });
           }
       });
       
-      // 3. Record Local Overheads
-      const totalOverheads = (shipment.clearingCost || 0) + (shipment.customExpenseCost || 0) + (shipment.expectedDuty || 0);
-      const totalQty = payload.receivedItems.reduce((s: number, i: any) => s + i.quantity, 0);
+      const totalOverheads = (Number(shipment.clearingCost) || 0) + (Number(shipment.customExpenseCost) || 0) + (Number(shipment.expectedDuty) || 0);
+      const totalQty = payload.receivedItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+      
       if (totalOverheads > 0 && totalQty > 0) {
           const overheadPerUnit = totalOverheads / totalQty;
           payload.receivedItems.forEach((ri: any) => {
@@ -484,7 +499,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   productId: ri.productId,
                   type: TransactionType.IMPORT_OVERHEAD,
                   description: `Local Overheads for Shipment #${shipment.id}`,
-                  quantity: ri.quantity,
+                  quantity: Number(ri.quantity) || 0,
                   amount: overheadPerUnit,
                   date: Timestamp.now(),
                   locationId: payload.locationId
@@ -492,11 +507,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           });
       }
 
-      await batch.commit();
+      try {
+          await batch.commit();
+      } catch (e) {
+          console.error("Firestore Batch Commit Failed in receiveShipment:", e);
+          throw e;
+      }
   };
 
   const addExport = async (payload: any) => {
-      // Critical Fix: Use user-friendly Shipment ID as the Firestore Document ID
       const shipmentId = payload.shipmentId;
       const shipmentRef = doc(db, 'shipments', shipmentId);
       
@@ -505,33 +524,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           date: serverTimestamp(),
           status: ShipmentStatus.PENDING,
           items: payload.items,
-          freightCost: payload.freightForwarder.amount,
-          freightForwarderId: payload.freightForwarder.id,
-          clearingCost: payload.clearingAgent.amount,
-          clearingAgentId: payload.clearingAgent.id,
-          customExpenseCost: payload.customExpense.amount,
-          customExpenseTypeId: payload.customExpense.typeId,
-          expectedDuty: payload.expectedDuty
+          freightCost: Number(payload.freightForwarder?.amount) || 0,
+          freightForwarderId: payload.freightForwarder?.id || '',
+          clearingCost: Number(payload.clearingAgent?.amount) || 0,
+          clearingAgentId: payload.clearingAgent?.id || '',
+          customExpenseCost: Number(payload.customExpense?.amount) || 0,
+          customExpenseTypeId: payload.customExpense?.typeId || '',
+          expectedDuty: Number(payload.expectedDuty) || 0
       });
   };
 
   const updateShipmentCosts = async (payload: any) => {
       const sRef = doc(db, 'shipments', payload.shipmentId);
       await updateDoc(sRef, {
-          freightCost: payload.freightCost,
-          clearingCost: payload.clearingCost,
-          customExpenseCost: payload.customExpenseCost,
-          expectedDuty: payload.expectedDuty
+          freightCost: Number(payload.freightCost) || 0,
+          clearingCost: Number(payload.clearingCost) || 0,
+          customExpenseCost: Number(payload.customExpenseCost) || 0,
+          expectedDuty: Number(payload.expectedDuty) || 0
       });
   };
 
   const recordPaymentVoucher = async (payload: any) => {
-      const rate = currentShopCurrency.rate;
+      const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'transactions'), {
           shopId: payload.shopId,
           type: TransactionType.EXPENSE,
           description: payload.notes || `Payment for ${payload.beneficiaryName || payload.category}`,
-          amount: payload.amount / (payload.shopId === 'HO' ? 1 : rate),
+          amount: (Number(payload.amount) || 0) / (payload.shopId === 'HO' ? 1 : rate),
           date: Timestamp.fromDate(payload.date),
           paymentAccountId: payload.paymentAccountId,
           expenseAccountId: payload.referenceId
@@ -540,7 +559,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const recordSalesReturn = async (payload: any) => {
       const batch = writeBatch(db);
-      const rate = currentShopCurrency.rate;
+      const rate = Number(currentShopCurrency.rate) || 1;
       payload.returnedItems.forEach((item: any) => {
           const retRef = doc(collection(db, 'transactions'));
           batch.set(retRef, {
@@ -550,15 +569,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               productId: item.productId,
               type: TransactionType.SALES_RETURN,
               description: `Sales Return: ${payload.reason}`,
-              amount: item.salePrice / rate,
-              quantity: item.quantity,
+              amount: (Number(item.salePrice) || 0) / rate,
+              quantity: Number(item.quantity) || 0,
               date: Timestamp.fromDate(payload.date),
               locationId: payload.locationId
           });
       });
       if (payload.refundMethod === 'cash') {
           const refundRef = doc(collection(db, 'transactions'));
-          const totalRefund = payload.returnedItems.reduce((s: number, i: any) => s + (i.quantity * i.salePrice), 0);
+          const totalRefund = payload.returnedItems.reduce((s: number, i: any) => s + ((Number(i.quantity) || 0) * (Number(i.salePrice) || 0)), 0);
           batch.set(refundRef, {
               shopId: payload.shopId,
               type: TransactionType.EXPENSE,
@@ -577,8 +596,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           productId: payload.productId,
           type: TransactionType.OPENING_STOCK,
           description: payload.notes,
-          quantity: payload.quantity,
-          amount: payload.unitCost / currentShopCurrency.rate,
+          quantity: Number(payload.quantity) || 0,
+          amount: (Number(payload.unitCost) || 0) / (Number(currentShopCurrency.rate) || 1),
           date: Timestamp.fromDate(payload.date),
           locationId: payload.locationId
       });
@@ -586,6 +605,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const bulkAddOpeningStock = async (payload: OpeningStockPayload[]) => {
       const batch = writeBatch(db);
+      const rate = Number(currentShopCurrency.rate) || 1;
       payload.forEach(item => {
           const ref = doc(collection(db, 'transactions'));
           batch.set(ref, {
@@ -593,8 +613,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               productId: item.productId,
               type: TransactionType.OPENING_STOCK,
               description: item.notes,
-              quantity: item.quantity,
-              amount: item.unitCost / currentShopCurrency.rate,
+              quantity: Number(item.quantity) || 0,
+              amount: (Number(item.unitCost) || 0) / rate,
               date: Timestamp.fromDate(item.date),
               locationId: item.locationId
           });
