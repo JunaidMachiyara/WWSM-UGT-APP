@@ -157,7 +157,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubProds = onSnapshot(collection(db, 'products'), (s) => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
     const unsubTrans = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Transaction))));
     
-    // CRITICAL: Ensure the ID in the object is the Firestore Document ID
     const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => {
         const data = d.data();
         return { 
@@ -238,8 +237,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { 
     try {
-        console.log('AppContext: addShopAccount attempt...', account);
-        // Ensure numeric fields are valid
         const safeAccount = {
             ...account,
             openingBalance: Number(account.openingBalance) || 0
@@ -263,7 +260,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let stock = 0;
     transactions.forEach(t => {
       if (t.productId === productId && (!locationId || t.locationId === locationId || (!t.locationId && locationId === t.shopId))) {
-        // Fix: corrected typo TransactionType.OPEN_STOCK to TransactionType.OPENING_STOCK
         if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
           stock += (t.quantity || 0);
         } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
@@ -451,7 +447,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string }) => {
-      // Find shipment using the ID from the payload (which is the Firestore Document Name)
       const shipment = shipments.find(s => s.id === payload.shipmentId);
       if (!shipment) {
           console.error("Critical: Shipment object not found in local state for ID:", payload.shipmentId);
@@ -459,7 +454,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       }
 
       const batch = writeBatch(db);
-      // Use setDoc with merge to be more resilient than update
       const shipmentRef = doc(db, 'shipments', payload.shipmentId);
 
       batch.set(shipmentRef, { 
@@ -549,11 +543,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await addDoc(collection(db, 'transactions'), {
           shopId: payload.shopId,
           type: TransactionType.EXPENSE,
+          // Explicitly tagging the category in description for legacy and a new field for future
           description: payload.notes || `Payment for ${payload.beneficiaryName || payload.category}`,
           amount: (Number(payload.amount) || 0) / (payload.shopId === 'HO' ? 1 : rate),
           date: Timestamp.fromDate(payload.date),
           paymentAccountId: payload.paymentAccountId,
-          expenseAccountId: payload.referenceId
+          expenseAccountId: payload.referenceId,
+          expenseCategory: payload.category // CRITICAL: Storing this for filtering in ledgers
       });
   };
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { AdvanceItem, ShipmentStatus, Transaction, TransactionType } from '../../../types';
@@ -14,16 +15,6 @@ const CustomerAdvances: React.FC = () => {
     
     const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
     const currentShopAccounts = useMemo(() => shopAccounts.filter(acc => acc.shopId === shopId), [shopAccounts, shopId]);
-
-    const inTransitProducts = useMemo(() => {
-        const pendingShipmentItems = shipments
-            .filter(s => s.shopId === shopId && s.status === ShipmentStatus.PENDING)
-            .flatMap(s => s.items);
-
-        const uniqueProductIds = [...new Set(pendingShipmentItems.map(item => item.productId))];
-
-        return products.filter(p => uniqueProductIds.includes(p.id));
-    }, [shipments, products, shopId]);
 
     const customersWithAdvance = useMemo(() => {
         return shopCustomers.map(customer => {
@@ -154,31 +145,27 @@ const CustomerAdvances: React.FC = () => {
 
                         <div className="border border-gray-200 rounded-lg p-4">
                             <h4 className="text-md font-semibold text-gray-800 mb-2">Advance Against Items (Optional)</h4>
-                            <p className="text-xs text-gray-500 mb-4">Link this advance to specific items from upcoming shipments.</p>
+                            <p className="text-xs text-gray-500 mb-4">Link this advance to specific items (Pre-booking).</p>
                             
-                            {inTransitProducts.length > 0 ? (
-                                <div className="space-y-4">
-                                    {items.map((item, index) => (
-                                        <div key={index} className="grid grid-cols-6 gap-2 items-end border-t pt-2 first:border-none first:pt-0">
-                                            <div className="col-span-3">
-                                                <label className="block text-xs font-medium text-gray-700">Product</label>
-                                                <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-primary">
-                                                    <option value="">Select product</option>
-                                                    {inTransitProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                                </select>
-                                            </div>
-                                            <div className="col-span-2">
-                                                <label className="block text-xs font-medium text-gray-700">Quantity</label>
-                                                <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-primary" min="1"/>
-                                            </div>
-                                            <button type="button" onClick={() => removeItemRow(index)} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-2 rounded-lg text-xs disabled:opacity-50" disabled={items.length <= 1}>X</button>
+                            <div className="space-y-4">
+                                {items.map((item, index) => (
+                                    <div key={index} className="grid grid-cols-6 gap-2 items-end border-t pt-2 first:border-none first:pt-0">
+                                        <div className="col-span-3">
+                                            <label className="block text-xs font-medium text-gray-700">Product</label>
+                                            <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-primary">
+                                                <option value="">Select product</option>
+                                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                            </select>
                                         </div>
-                                    ))}
-                                     <button type="button" onClick={addItemRow} className="mt-2 text-xs bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-3 rounded-lg">+ Add Item</button>
-                                </div>
-                            ) : (
-                                 <p className="text-sm text-center text-gray-500 bg-gray-50 p-4 rounded-md">No items currently in transit for this shop.</p>
-                            )}
+                                        <div className="col-span-2">
+                                            <label className="block text-xs font-medium text-gray-700">Quantity</label>
+                                            <input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-primary" min="1"/>
+                                        </div>
+                                        <button type="button" onClick={() => removeItemRow(index)} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-2 rounded-lg text-xs disabled:opacity-50" disabled={items.length <= 1}>X</button>
+                                    </div>
+                                ))}
+                                 <button type="button" onClick={addItemRow} className="mt-2 text-xs bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-3 rounded-lg">+ Add Item</button>
+                            </div>
                         </div>
 
                         <button type="submit" className="w-full bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded-lg">Record Advance</button>

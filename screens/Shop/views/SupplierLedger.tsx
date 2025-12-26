@@ -6,8 +6,10 @@ import { TransactionType } from '../../../types';
 interface GroupedLedgerEntry {
     date: Date;
     description: string;
-    amount: number;
-    type: TransactionType;
+    debit: number;   // Payment (Money Out)
+    credit: number;  // Bill (Stock In)
+    type: 'BILL' | 'PAYMENT';
+    balance: number;
 }
 
 const SupplierLedger: React.FC = () => {
@@ -15,34 +17,58 @@ const SupplierLedger: React.FC = () => {
 
   const ledgerEntries = useMemo(() => {
     const shopTransactions = transactions.filter(t => t.shopId === shopId);
-    let runningBalance = 0;
+    
+    // 1. Identify relevant Head Office transactions
+    // - IMPORT: Bills (Credits / Liability Increases)
+    // - EXPENSE with category 'HEAD_OFFICE': Payments (Debits / Liability Decreases)
+    const rawRelevant = shopTransactions.filter(t => {
+        if (t.type === TransactionType.IMPORT) return true;
+        
+        // Handle recorded payments to HO
+        // We check for the new expenseCategory field OR fallback to description check for old data
+        const isHOPayment = (t as any).expenseCategory === 'HEAD_OFFICE' || 
+                            (t.type === TransactionType.EXPENSE && t.description.toLowerCase().includes('head office'));
+        return isHOPayment;
+    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Only show Head Office Transactions (IMPORT bills)
-    const relevantTransactions = shopTransactions.filter(t => t.type === TransactionType.IMPORT)
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // 2. Map and Group IMPORT transactions
+    // Imports are line-item based in transactions, so we group them by Shipment ID / Description for the ledger
+    const ledgerMap: Record<string, any> = {};
 
-    // Group transactions by Description (assuming description contains shipment info)
-    // This avoids listing every single product line item separately in the ledger
-    const grouped = relevantTransactions.reduce((acc, t) => {
-        const key = `${t.description}-${new Date(t.date).toISOString().split('T')[0]}`; 
-        if (!acc[key]) {
-            acc[key] = {
+    rawRelevant.forEach(t => {
+        if (t.type === TransactionType.IMPORT) {
+            const key = `SHIP-${t.description}-${new Date(t.date).toISOString().split('T')[0]}`;
+            if (!ledgerMap[key]) {
+                ledgerMap[key] = {
+                    date: t.date,
+                    description: t.description,
+                    debit: 0,
+                    credit: 0,
+                    type: 'BILL'
+                };
+            }
+            ledgerMap[key].credit += (t.amount * (t.quantity || 1));
+        } else {
+            // Expenses (Payments) are usually distinct voucher entries, so we don't necessarily group them
+            // but we use a unique key to keep them separate from grouped imports
+            const key = `PMT-${t.id}`;
+            ledgerMap[key] = {
                 date: t.date,
                 description: t.description,
-                amount: 0,
-                type: t.type,
+                debit: t.amount, // Payment decreases payable
+                credit: 0,
+                type: 'PAYMENT'
             };
         }
-        acc[key].amount += (t.amount * (t.quantity || 1));
-        return acc;
-    }, {} as Record<string, GroupedLedgerEntry>);
+    });
 
-    const sortedGroups = (Object.values(grouped) as GroupedLedgerEntry[]).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // 3. Sort chronologically and calculate running balance
+    const sortedEntries = (Object.values(ledgerMap) as any[]).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    return sortedGroups.map(entry => {
-        // For Suppliers, incoming bills (IMPORT) are Credits (increase payable)
-        runningBalance += entry.amount;
-        return { ...entry, balance: runningBalance };
+    let runningBalance = 0;
+    return sortedEntries.map(entry => {
+        runningBalance += (entry.credit - entry.debit); // Credit increases liability, Debit decreases it
+        return { ...entry, balance: runningBalance } as GroupedLedgerEntry;
     });
 
   }, [transactions, shopId]);
@@ -51,54 +77,95 @@ const SupplierLedger: React.FC = () => {
 
   return (
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-5xl mx-auto">
-        <h2 className="text-2xl font-bold mb-6 text-gray-800">Supplier Ledger</h2>
+        <h2 className="text-2xl font-bold mb-6 text-gray-800">Supplier Ledger (Head Office)</h2>
         
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
-            <h3 className="text-lg font-semibold text-gray-800">
-                Account: <span className="text-primary">Head Office (Stock Payables)</span>
-            </h3>
-            <p className="text-sm text-gray-500 mt-1">
-                Tracks liability for Goods and Freight received from Head Office.
-            </p>
-             <div className="mt-4 flex justify-between items-end">
-                <div>
-                    <p className="text-sm font-medium text-gray-600">Total Payable Balance</p>
-                    <p className="text-2xl font-bold text-red-600">{formatCurrency(finalBalance)}</p>
-                </div>
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-8 flex flex-col md:flex-row md:items-center md:justify-between shadow-inner">
+            <div>
+                <h3 className="text-xl font-bold text-gray-800">
+                    Account: <span className="text-primary">Stock & Freight Payables</span>
+                </h3>
+                <p className="text-sm text-gray-500 mt-1 max-w-md">
+                    Comprehensive record of goods received from Head Office and payments remitted back.
+                </p>
+            </div>
+            <div className="mt-4 md:mt-0 text-right">
+                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-1">Total Outstanding Balance</p>
+                <p className={`text-4xl font-black ${finalBalance > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                    {formatCurrency(finalBalance)}
+                </p>
             </div>
         </div>
 
-        <div className="overflow-x-auto border border-gray-200 rounded-lg">
+        <div className="overflow-x-auto border border-gray-200 rounded-xl shadow-sm">
             <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                     <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Transaction Type</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount (Credit)</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Running Balance</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Date</th>
+                        <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Description</th>
+                        <th className="px-6 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Type</th>
+                        <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Debit (Payment)</th>
+                        <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Credit (Bill)</th>
+                        <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Balance</th>
                     </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
+                <tbody className="bg-white divide-y divide-gray-100">
                     {ledgerEntries.length > 0 ? ledgerEntries.map((entry, index) => (
-                        <tr key={index}>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{new Date(entry.date).toLocaleDateString()}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{entry.description}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                                    BILL
+                        <tr key={index} className="hover:bg-blue-50/30 transition-colors">
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
+                                {new Date(entry.date).toLocaleDateString()}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
+                                {entry.description}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                                <span className={`px-3 py-1 inline-flex text-[10px] leading-4 font-black rounded-full uppercase tracking-tighter shadow-sm border ${
+                                    entry.type === 'BILL' 
+                                        ? 'bg-blue-50 text-blue-700 border-blue-100' 
+                                        : 'bg-green-50 text-green-700 border-green-100'
+                                }`}>
+                                    {entry.type}
                                 </span>
                             </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-medium">{formatCurrency(entry.amount)}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-800">{formatCurrency(entry.balance)}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600 font-black">
+                                {entry.debit > 0 ? formatCurrency(entry.debit) : '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600 font-black">
+                                {entry.credit > 0 ? formatCurrency(entry.credit) : '-'}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-black text-gray-900 bg-gray-50/50">
+                                {formatCurrency(entry.balance)}
+                            </td>
                         </tr>
                     )) : (
                         <tr>
-                            <td colSpan={5} className="text-center py-10 text-gray-500">No transactions found for this account.</td>
+                            <td colSpan={6} className="text-center py-20 text-gray-400 italic">
+                                <div className="flex flex-col items-center">
+                                    <svg className="w-12 h-12 text-gray-200 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                                    </svg>
+                                    No transactions recorded for this supplier account.
+                                </div>
+                            </td>
                         </tr>
                     )}
                 </tbody>
+                {ledgerEntries.length > 0 && (
+                    <tfoot className="bg-gray-50/50">
+                        <tr>
+                            <td colSpan={5} className="px-6 py-4 text-right text-xs font-black text-gray-400 uppercase tracking-widest border-t border-gray-200">Final Outstanding Balance:</td>
+                            <td className="px-6 py-4 text-right text-lg font-black text-gray-900 border-t border-gray-200">{formatCurrency(finalBalance)}</td>
+                        </tr>
+                    </tfoot>
+                )}
             </table>
+        </div>
+        <div className="mt-6 flex items-center p-4 bg-blue-50 border border-blue-100 rounded-lg">
+             <svg className="w-5 h-5 text-blue-400 mr-3" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+             </svg>
+             <p className="text-xs text-blue-700 font-medium leading-relaxed">
+                Payments recorded via <strong>Accounting > Payment Voucher > Head Office</strong> will automatically reflect here as Debits to reduce your outstanding payable. Imports from verification are Credits.
+             </p>
         </div>
     </div>
   );
