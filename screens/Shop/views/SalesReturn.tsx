@@ -1,6 +1,8 @@
+
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
 import { Transaction, TransactionType } from '../../../types';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 interface ReturnItem {
   productId: string;
@@ -131,6 +133,12 @@ const SalesReturn: React.FC = () => {
         setLocationId('');
     };
 
+    const handleCustomerChange = (id: string) => {
+        setCustomerId(id);
+        setInvoiceId('');
+        setReturnItems([]);
+    };
+
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!shopId || !customerId || !invoiceId || !reason || !locationId || returnItems.every(i => i.returnQty === 0)) {
@@ -175,11 +183,13 @@ const SalesReturn: React.FC = () => {
                 {/* Step 1: Select Customer & Invoice */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
-                        <select id="customer" value={customerId} onChange={e => { setCustomerId(e.target.value); setInvoiceId(''); setReturnItems([]); }} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
-                            <option value="">Select a customer</option>
-                            {shopCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
+                        <label htmlFor="customer" className="block text-sm font-medium text-gray-700 mb-1">Customer</label>
+                        <SearchableSelect 
+                            options={shopCustomers} 
+                            value={customerId} 
+                            onChange={handleCustomerChange} 
+                            placeholder="Search customer..." 
+                        />
                     </div>
                     <div>
                         <label htmlFor="invoice" className="block text-sm font-medium text-gray-700">Invoice</label>

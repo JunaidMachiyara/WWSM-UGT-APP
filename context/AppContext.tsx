@@ -446,7 +446,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   };
 
-  const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string }) => {
+  const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string, extraItems?: ReceivedExtraItem[] }) => {
       const shipment = shipments.find(s => s.id === payload.shipmentId);
       if (!shipment) {
           console.error("Critical: Shipment object not found in local state for ID:", payload.shipmentId);
@@ -455,18 +455,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       const batch = writeBatch(db);
       const shipmentRef = doc(db, 'shipments', payload.shipmentId);
+      const rate = Number(currentShopCurrency.rate) || 1;
 
+      // Update manifest items with verification and store extra items for audit trail
       batch.set(shipmentRef, { 
           status: ShipmentStatus.RECEIVED,
           items: shipment.items.map(item => {
               const received = payload.receivedItems.find((ri: any) => ri.productId === item.productId);
               return { ...item, receivedQuantity: Number(received?.quantity) || 0 };
-          })
+          }),
+          extraItemsReceived: payload.extraItems || []
       }, { merge: true });
 
+      // 1. Process Manifest Items (recorded at original manifest cost)
       payload.receivedItems.forEach((ri: any) => {
           const item = shipment.items.find(si => si.productId === ri.productId);
-          if (item) {
+          if (item && Number(ri.quantity) > 0) {
               const transRef = doc(collection(db, 'transactions'));
               batch.set(transRef, {
                   shopId: shipment.shopId,
@@ -480,25 +484,70 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               });
           }
       });
+
+      // 2. Process Extra (Unplanned) Items (recorded at verification-provided cost)
+      if (payload.extraItems && payload.extraItems.length > 0) {
+        payload.extraItems.forEach((ei) => {
+            const transRef = doc(collection(db, 'transactions'));
+            // Convert local unit cost to base currency (USD)
+            const unitCostBase = (Number(ei.unitCost) || 0) / rate;
+            
+            batch.set(transRef, {
+                shopId: shipment.shopId,
+                productId: ei.productId,
+                type: TransactionType.IMPORT,
+                description: `Import (Extra/Unplanned) - Shipment #${shipment.id}: ${ei.notes || ''}`,
+                quantity: Number(ei.quantity) || 0,
+                amount: unitCostBase,
+                date: Timestamp.now(),
+                locationId: payload.locationId
+            });
+        });
+      }
       
+      // 3. Allocate Overheads fairly across ALL received items (manifest + extra)
       const totalOverheads = (Number(shipment.clearingCost) || 0) + (Number(shipment.customExpenseCost) || 0) + (Number(shipment.expectedDuty) || 0);
-      const totalQty = payload.receivedItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+      
+      const manifestQty = payload.receivedItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+      const extraQty = (payload.extraItems || []).reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
+      const totalQty = manifestQty + extraQty;
       
       if (totalOverheads > 0 && totalQty > 0) {
           const overheadPerUnit = totalOverheads / totalQty;
+          
+          // Overhead allocation for manifest items
           payload.receivedItems.forEach((ri: any) => {
-              const ohRef = doc(collection(db, 'transactions'));
-              batch.set(ohRef, {
-                  shopId: shipment.shopId,
-                  productId: ri.productId,
-                  type: TransactionType.IMPORT_OVERHEAD,
-                  description: `Local Overheads for Shipment #${shipment.id}`,
-                  quantity: Number(ri.quantity) || 0,
-                  amount: overheadPerUnit,
-                  date: Timestamp.now(),
-                  locationId: payload.locationId
-              });
+              if (Number(ri.quantity) > 0) {
+                const ohRef = doc(collection(db, 'transactions'));
+                batch.set(ohRef, {
+                    shopId: shipment.shopId,
+                    productId: ri.productId,
+                    type: TransactionType.IMPORT_OVERHEAD,
+                    description: `Local Overheads for Shipment #${shipment.id}`,
+                    quantity: Number(ri.quantity) || 0,
+                    amount: overheadPerUnit,
+                    date: Timestamp.now(),
+                    locationId: payload.locationId
+                });
+              }
           });
+
+          // Overhead allocation for extra items
+          if (payload.extraItems) {
+            payload.extraItems.forEach((ei) => {
+                const ohRef = doc(collection(db, 'transactions'));
+                batch.set(ohRef, {
+                    shopId: shipment.shopId,
+                    productId: ei.productId,
+                    type: TransactionType.IMPORT_OVERHEAD,
+                    description: `Local Overheads (Extra Item) - Shipment #${shipment.id}`,
+                    quantity: Number(ei.quantity) || 0,
+                    amount: overheadPerUnit,
+                    date: Timestamp.now(),
+                    locationId: payload.locationId
+                });
+            });
+          }
       }
 
       try {
