@@ -80,6 +80,13 @@ export interface ShipmentItem {
     landedCost: number; // Cost per unit from HO
 }
 
+export interface ReceivedExtraItem {
+    productId: string;
+    quantity: number;
+    unitCost: number; // in local currency
+    notes?: string;
+}
+
 export interface Shipment {
   id: string;
   shopId: string;
@@ -93,6 +100,7 @@ export interface Shipment {
   customExpenseCost: number;
   customExpenseTypeId?: string;
   expectedDuty: number;
+  extraItemsReceived?: ReceivedExtraItem[]; // Audit trail for unplanned items
 }
 
 export interface Shop {

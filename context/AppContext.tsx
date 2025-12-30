@@ -37,7 +37,8 @@ import {
   CustomExpenseType, 
   ExpenseAccount, 
   Asset, 
-  AssetStatus 
+  AssetStatus,
+  ReceivedExtraItem
 } from '../types';
 
 export interface SaleItem {
@@ -45,13 +46,6 @@ export interface SaleItem {
     quantity: number;
     salePrice: number;
     locationId?: string;
-}
-
-export interface ReceivedExtraItem {
-    productId: string;
-    quantity: number;
-    unitCost: number;
-    notes?: string;
 }
 
 export interface OpeningStockPayload {
@@ -301,6 +295,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const rate = Number(currentShopCurrency.rate) || 1;
       const shop = shops.find(s => s.id === shopId);
 
+      // Determine if this entire sale transaction is a Credit Sale or Cash Sale
+      const totalInvoiceValueLocal = items.reduce((s: number, i: SaleItem) => s + (i.salePrice * i.quantity), 0);
+      const isCreditSale = (Number(cashPaid) + Number(advanceApplied)) < (totalInvoiceValueLocal - 0.01);
+      const saleType = isCreditSale ? TransactionType.CREDIT_SALE : TransactionType.CASH_SALE;
+
       items.forEach((item: SaleItem) => {
           const product = products.find(p => p.id === item.productId);
           const unitPriceBase = (Number(item.salePrice) || 0) / rate;
@@ -324,7 +323,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               invoiceId: invoiceNumber,
               externalReference: manualReference,
               productId: item.productId,
-              type: TransactionType.CASH_SALE,
+              type: saleType, // Use calculated saleType
               description: `Sale of ${product?.name}`,
               amount: unitPriceBase,
               quantity: Number(item.quantity) || 0,
@@ -457,7 +456,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const shipmentRef = doc(db, 'shipments', payload.shipmentId);
       const rate = Number(currentShopCurrency.rate) || 1;
 
-      // Update manifest items with verification and store extra items for audit trail
+      // 1. Update manifest items with verification and store extra items for audit trail
       batch.set(shipmentRef, { 
           status: ShipmentStatus.RECEIVED,
           items: shipment.items.map(item => {
@@ -467,7 +466,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           extraItemsReceived: payload.extraItems || []
       }, { merge: true });
 
-      // 1. Process Manifest Items (recorded at original manifest cost)
+      // 2. Process Manifest Items (recorded at original manifest cost in Base USD)
       payload.receivedItems.forEach((ri: any) => {
           const item = shipment.items.find(si => si.productId === ri.productId);
           if (item && Number(ri.quantity) > 0) {
@@ -479,33 +478,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   description: `Import from HO: Shipment #${shipment.id}`,
                   quantity: Number(ri.quantity) || 0,
                   amount: Number(item.landedCost) || 0,
-                  date: Timestamp.now(),
+                  date: serverTimestamp(),
                   locationId: payload.locationId
               });
           }
       });
 
-      // 2. Process Extra (Unplanned) Items (recorded at verification-provided cost)
+      // 3. Process Extra (Unplanned) Items (recorded at verification-provided cost)
       if (payload.extraItems && payload.extraItems.length > 0) {
         payload.extraItems.forEach((ei) => {
             const transRef = doc(collection(db, 'transactions'));
-            // Convert local unit cost to base currency (USD)
+            // Explicitly convert provided local unit cost to base currency (USD) for storage
             const unitCostBase = (Number(ei.unitCost) || 0) / rate;
             
             batch.set(transRef, {
                 shopId: shipment.shopId,
                 productId: ei.productId,
-                type: TransactionType.IMPORT,
+                type: TransactionType.IMPORT, // CRITICAL: Setting type to IMPORT so it adds to stock correctly
                 description: `Import (Extra/Unplanned) - Shipment #${shipment.id}: ${ei.notes || ''}`,
                 quantity: Number(ei.quantity) || 0,
                 amount: unitCostBase,
-                date: Timestamp.now(),
+                date: serverTimestamp(),
                 locationId: payload.locationId
             });
         });
       }
       
-      // 3. Allocate Overheads fairly across ALL received items (manifest + extra)
+      // 4. Allocate Overheads fairly across ALL received items (manifest + extra)
       const totalOverheads = (Number(shipment.clearingCost) || 0) + (Number(shipment.customExpenseCost) || 0) + (Number(shipment.expectedDuty) || 0);
       
       const manifestQty = payload.receivedItems.reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0);
@@ -526,7 +525,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     description: `Local Overheads for Shipment #${shipment.id}`,
                     quantity: Number(ri.quantity) || 0,
                     amount: overheadPerUnit,
-                    date: Timestamp.now(),
+                    date: serverTimestamp(),
                     locationId: payload.locationId
                 });
               }
@@ -543,7 +542,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                     description: `Local Overheads (Extra Item) - Shipment #${shipment.id}`,
                     quantity: Number(ei.quantity) || 0,
                     amount: overheadPerUnit,
-                    date: Timestamp.now(),
+                    date: serverTimestamp(),
                     locationId: payload.locationId
                 });
             });

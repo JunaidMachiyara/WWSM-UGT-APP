@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { Shipment, ShipmentStatus, AlertType } from '../../../types';
-import { ReceivedExtraItem } from '../../../context/AppContext';
+/* Fix: Import ReceivedExtraItem from types where it is defined and exported */
+import { Shipment, ShipmentStatus, AlertType, ReceivedExtraItem } from '../../../types';
 
 interface ReceivedItem {
     productId: string;
