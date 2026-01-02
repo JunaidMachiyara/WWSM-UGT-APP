@@ -8,7 +8,7 @@ interface GroupedLedgerEntry {
     description: string;
     debit: number;   // Payment (Money Out)
     credit: number;  // Bill (Stock In)
-    type: 'BILL' | 'PAYMENT';
+    type: 'BILL' | 'PAYMENT' | 'OPENING';
     balance: number;
 }
 
@@ -25,18 +25,29 @@ const SupplierLedger: React.FC = () => {
         if (t.type === TransactionType.IMPORT) return true;
         
         // Handle recorded payments to HO
-        // We check for the new expenseCategory field OR fallback to description check for old data
         const isHOPayment = (t as any).expenseCategory === 'HEAD_OFFICE' || 
                             (t.type === TransactionType.EXPENSE && t.description.toLowerCase().includes('head office'));
         return isHOPayment;
     }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // 2. Map and Group IMPORT transactions
-    // Imports are line-item based in transactions, so we group them by Shipment ID / Description for the ledger
     const ledgerMap: Record<string, any> = {};
 
     rawRelevant.forEach(t => {
         if (t.type === TransactionType.IMPORT) {
+            // Handle Opening Balance specifically
+            if (t.invoiceId === 'HO-OPENING-BAL') {
+                const key = 'OPENING-BAL';
+                ledgerMap[key] = {
+                    date: t.date,
+                    description: 'Opening Balance Migration',
+                    debit: t.amount < 0 ? Math.abs(t.amount) : 0,
+                    credit: t.amount > 0 ? t.amount : 0,
+                    type: 'OPENING'
+                };
+                return;
+            }
+
             const key = `SHIP-${t.description}-${new Date(t.date).toISOString().split('T')[0]}`;
             if (!ledgerMap[key]) {
                 ledgerMap[key] = {
@@ -49,13 +60,11 @@ const SupplierLedger: React.FC = () => {
             }
             ledgerMap[key].credit += (t.amount * (t.quantity || 1));
         } else {
-            // Expenses (Payments) are usually distinct voucher entries, so we don't necessarily group them
-            // but we use a unique key to keep them separate from grouped imports
             const key = `PMT-${t.id}`;
             ledgerMap[key] = {
                 date: t.date,
                 description: t.description,
-                debit: t.amount, // Payment decreases payable
+                debit: t.amount,
                 credit: 0,
                 type: 'PAYMENT'
             };
@@ -63,11 +72,15 @@ const SupplierLedger: React.FC = () => {
     });
 
     // 3. Sort chronologically and calculate running balance
-    const sortedEntries = (Object.values(ledgerMap) as any[]).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const sortedEntries = (Object.values(ledgerMap) as any[]).sort((a, b) => {
+        if (a.type === 'OPENING') return -1;
+        if (b.type === 'OPENING') return 1;
+        return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
 
     let runningBalance = 0;
     return sortedEntries.map(entry => {
-        runningBalance += (entry.credit - entry.debit); // Credit increases liability, Debit decreases it
+        runningBalance += (entry.credit - entry.debit);
         return { ...entry, balance: runningBalance } as GroupedLedgerEntry;
     });
 
@@ -110,9 +123,9 @@ const SupplierLedger: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
                     {ledgerEntries.length > 0 ? ledgerEntries.map((entry, index) => (
-                        <tr key={index} className="hover:bg-blue-50/30 transition-colors">
+                        <tr key={index} className={`hover:bg-blue-50/30 transition-colors ${entry.type === 'OPENING' ? 'bg-blue-50/50 font-bold' : ''}`}>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
-                                {new Date(entry.date).toLocaleDateString()}
+                                {entry.type === 'OPENING' ? '-' : new Date(entry.date).toLocaleDateString()}
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-semibold">
                                 {entry.description}
@@ -121,7 +134,9 @@ const SupplierLedger: React.FC = () => {
                                 <span className={`px-3 py-1 inline-flex text-[10px] leading-4 font-black rounded-full uppercase tracking-tighter shadow-sm border ${
                                     entry.type === 'BILL' 
                                         ? 'bg-blue-50 text-blue-700 border-blue-100' 
-                                        : 'bg-green-50 text-green-700 border-green-100'
+                                        : entry.type === 'PAYMENT'
+                                        ? 'bg-green-50 text-green-700 border-green-100'
+                                        : 'bg-indigo-50 text-indigo-700 border-indigo-100'
                                 }`}>
                                     {entry.type}
                                 </span>
@@ -141,7 +156,7 @@ const SupplierLedger: React.FC = () => {
                             <td colSpan={6} className="text-center py-20 text-gray-400 italic">
                                 <div className="flex flex-col items-center">
                                     <svg className="w-12 h-12 text-gray-200 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
                                     </svg>
                                     No transactions recorded for this supplier account.
                                 </div>

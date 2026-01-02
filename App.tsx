@@ -8,13 +8,14 @@ import { UserRole } from './types';
 
 const App: React.FC = () => {
   const { role, login, shopId, currentUser, shops, switchShop, connectionError, isDemoMode } = useAppContext();
+  
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleLogin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     setError('');
     setLoading(true);
     
@@ -38,7 +39,7 @@ const App: React.FC = () => {
       <div className="min-h-screen bg-gray-100 flex items-center justify-center px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-2xl">
           <div className="text-center">
-            <h1 className="text-4xl font-extrabold text-primary mb-2">WWSM_UGT</h1>
+            <h1 className="text-4xl font-extrabold text-primary mb-2 tracking-tighter uppercase italic">WWSM_UGT</h1>
             <h2 className="text-xl font-medium text-gray-600">Retail & Export Management</h2>
             <p className="mt-2 text-sm text-gray-500">Please sign in to access your dashboard</p>
           </div>
@@ -54,7 +55,6 @@ const App: React.FC = () => {
                 <div className="ml-3">
                   <p className="text-sm text-orange-800 font-bold">System Warning</p>
                   <p className="text-sm text-orange-700">{connectionError}</p>
-                  <p className="text-xs mt-1 font-semibold">You may proceed to login with default credentials.</p>
                 </div>
               </div>
             </div>
@@ -111,7 +111,7 @@ const App: React.FC = () => {
               <button
                 type="submit"
                 disabled={loading}
-                className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out`}
+                className={`group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-bold rounded-md text-white ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark'} focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition duration-150 ease-in-out uppercase tracking-widest`}
               >
                 {loading ? (
                   <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -129,10 +129,6 @@ const App: React.FC = () => {
               </button>
             </div>
           </form>
-          
-          <div className="text-center text-xs text-gray-400 mt-4">
-             <p>Default Admin: admin / admin123</p>
-          </div>
         </div>
       </div>
     );
@@ -144,12 +140,11 @@ const App: React.FC = () => {
   }
 
   // 3. Manager Overview Mode
-  // If role is MANAGER and NO specific shop selected yet.
   if (role === UserRole.MANAGER && !shopId) {
       return <ManagerOverview />;
   }
 
-  // 4. Shop Selection Screen (For Single-Shop Operators or legacy)
+  // 4. Shop Selection Screen
   if (role === UserRole.SHOP_OPERATOR && !shopId) {
       const allowed = currentUser?.allowedShopIds || [];
       const availableShops = shops.filter(s => allowed.includes(s.id) && s.isActive);
@@ -159,10 +154,10 @@ const App: React.FC = () => {
               <div className="max-w-4xl mx-auto">
                   <div className="flex justify-between items-center mb-8">
                       <div>
-                          <h1 className="text-3xl font-bold text-gray-800">Select a Shop</h1>
-                          <p className="text-gray-600">Welcome back, {currentUser?.name}. Please choose a location.</p>
+                          <h1 className="text-3xl font-bold text-gray-800 tracking-tighter">SELECT A SHOP</h1>
+                          <p className="text-gray-600 font-medium">Welcome back, <span className="font-bold text-primary">{currentUser?.name}</span>. Please choose a location.</p>
                       </div>
-                      <button onClick={() => window.location.reload()} className="text-sm text-gray-500 underline">Logout</button>
+                      <button onClick={() => window.location.reload()} className="text-sm text-gray-500 underline font-bold uppercase tracking-widest">Logout</button>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -173,22 +168,22 @@ const App: React.FC = () => {
                               className="bg-white p-6 rounded-xl shadow-lg hover:shadow-xl transition-all cursor-pointer border-2 border-transparent hover:border-primary transform hover:-translate-y-1"
                           >
                               <div className="flex justify-between items-start mb-4">
-                                  <div className="bg-blue-100 p-3 rounded-full text-primary">
+                                  <div className="bg-blue-100 p-3 rounded-full text-primary shadow-inner">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                                       </svg>
                                   </div>
-                                  <span className="text-xs font-bold bg-green-100 text-green-800 px-2 py-1 rounded-full">Active</span>
+                                  <span className="text-[10px] font-black bg-green-100 text-green-800 px-2 py-1 rounded-full uppercase tracking-tighter">Active</span>
                               </div>
-                              <h3 className="text-xl font-bold text-gray-800">{shop.name}</h3>
-                              <p className="text-sm text-gray-500 mt-1">{shop.district}, {shop.country}</p>
-                              <p className="text-xs text-gray-400 mt-4">Currency: {shop.currencyCode}</p>
+                              <h3 className="text-xl font-black text-gray-800 tracking-tighter italic uppercase">{shop.name}</h3>
+                              <p className="text-sm text-gray-500 mt-1 font-medium">{shop.district}, {shop.country}</p>
+                              <p className="text-[10px] font-bold text-gray-400 mt-4 uppercase tracking-widest">Currency: {shop.currencyCode}</p>
                           </div>
                       ))}
                       
                       {availableShops.length === 0 && (
-                          <div className="col-span-full text-center py-12 bg-white rounded-lg shadow">
-                              <p className="text-gray-500">You have not been assigned to any active shops. Please contact Head Office.</p>
+                          <div className="col-span-full text-center py-12 bg-white rounded-2xl shadow border-2 border-dashed border-gray-200">
+                              <p className="text-gray-500 font-bold">You have not been assigned to any active shops. Please contact Head Office.</p>
                           </div>
                       )}
                   </div>

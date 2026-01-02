@@ -60,6 +60,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   const reportItems = [
       { id: 'inventory', label: 'Inventory Stock' },
       { id: 'reports-income', label: 'Income Statement' },
+      { id: 'balanceSheet', label: 'Balance Sheet' },
       { id: 'reports-ledgers', label: 'Customer Ledgers' },
       { id: 'supplierLedger', label: 'Supplier (HO) Ledger' },
       { id: 'cashLedger', label: 'Cash Account Ledgers' },
@@ -72,6 +73,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   const setupItems = [
       { id: 'openingStock', label: 'Opening Stock' },
       { id: 'customerManagement', label: 'Customers' },
+      { id: 'supplierManagement', label: 'Supplier (HO)' },
       { id: 'warehouseManagement', label: 'Warehouses' },
       { id: 'assetManagement', label: 'Assets' },
   ];

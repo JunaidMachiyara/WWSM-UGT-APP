@@ -29,7 +29,7 @@ const HOSidebar: React.FC<HOSidebarProps> = ({ activeView, setView }) => {
   const setupViewIds = [
       'shopManagement', 'userManagement', 'itemManagement', 
       'clearingAgentSetup', 'customExpenseSetup', 'currencyManagement',
-      'freightForwarderSetup', 'expenseAccountManagement'
+      'freightForwarderSetup', 'expenseAccountManagement', 'adminUtility'
   ];
 
   // Close dropdowns when clicking outside
@@ -75,6 +75,7 @@ const HOSidebar: React.FC<HOSidebarProps> = ({ activeView, setView }) => {
     { id: 'customExpenseSetup', label: 'Custom Expenses' },
     { id: 'expenseAccountManagement', label: 'Expense Accounts' },
     { id: 'currencyManagement', label: 'Currencies' },
+    { id: 'adminUtility', label: 'Admin Utility' },
   ];
 
   const NavLink = ({ id, label, isAlert, icon }: { id: HOView, label: string, isAlert?: boolean, icon?: React.ReactNode }) => (

@@ -21,8 +21,10 @@ import SupplierLedger from './views/SupplierLedger';
 import { ClearingAgentLedger, CustomsLedger, DutyLedger, CashLedger, BankLedger } from './views/ReportLedgers';
 import PaymentVoucher from './views/PaymentVoucher';
 import OpeningStock from './views/OpeningStock';
+import BalanceSheet from './views/BalanceSheet';
+import SupplierManagement from './views/SupplierManagement';
 
-export type ShopView = 'dashboard' | 'sales' | 'salesHistory' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger' | 'openingStock';
+export type ShopView = 'dashboard' | 'sales' | 'salesHistory' | 'expenses' | 'inventory' | 'reports-income' | 'reports-ledgers' | 'receiptVoucher' | 'paymentVoucher' | 'receiveStock' | 'customerManagement' | 'accountManagement' | 'salesReturn' | 'warehouseManagement' | 'assetManagement' | 'customerAdvances' | 'supplierLedger' | 'clearingAgentLedger' | 'customsLedger' | 'dutyLedger' | 'cashLedger' | 'bankLedger' | 'openingStock' | 'balanceSheet' | 'supplierManagement';
 
 const ShopDashboard: React.FC = () => {
   const [view, setView] = useState<ShopView>('dashboard');
@@ -75,6 +77,10 @@ const ShopDashboard: React.FC = () => {
         return <Ledgers />;
       case 'openingStock':
         return <OpeningStock />;
+      case 'balanceSheet':
+        return <BalanceSheet />;
+      case 'supplierManagement':
+        return <SupplierManagement />;
       default:
         return <Dashboard />;
     }
@@ -105,6 +111,8 @@ const ShopDashboard: React.FC = () => {
       case 'reports-income': return 'Income Statement';
       case 'reports-ledgers': return 'Customer Ledgers';
       case 'openingStock': return 'Add Old Stock (Opening)';
+      case 'balanceSheet': return 'Balance Sheet';
+      case 'supplierManagement': return 'Supplier (Head Office) Setup';
       default: return 'Dashboard';
     }
   };

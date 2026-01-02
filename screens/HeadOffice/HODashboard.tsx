@@ -19,8 +19,9 @@ import HOReceiptVoucher from './views/HOReceiptVoucher';
 import HOLedgers from './views/HOLedgers';
 import ItemPerformance from './views/ItemPerformance';
 import ShopPerformance from './views/ShopPerformance';
+import AdminUtility from './views/AdminUtility';
 
-export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement' | 'alerts' | 'paymentVoucher' | 'receiptVoucher' | 'ledgers' | 'itemPerformance' | 'shopPerformance';
+export type HOView = 'dashboard' | 'shopManagement' | 'userManagement' | 'itemManagement' | 'performanceAnalysis' | 'exportManagement' | 'clearingAgentSetup' | 'freightForwarderSetup' | 'customExpenseSetup' | 'expenseAccountManagement' | 'currencyManagement' | 'alerts' | 'paymentVoucher' | 'receiptVoucher' | 'ledgers' | 'itemPerformance' | 'shopPerformance' | 'adminUtility';
 
 const HODashboard: React.FC = () => {
   const [view, setView] = useState<HOView>('dashboard');
@@ -61,6 +62,8 @@ const HODashboard: React.FC = () => {
         return <ItemPerformance />;
       case 'shopPerformance':
         return <ShopPerformance />;
+      case 'adminUtility':
+        return <AdminUtility />;
       default:
         return <Dashboard />;
     }
@@ -85,6 +88,7 @@ const HODashboard: React.FC = () => {
       case 'ledgers': return 'Shop Ledgers & Financials';
       case 'itemPerformance': return 'Item Performance Details';
       case 'shopPerformance': return 'Shop Performance Details';
+      case 'adminUtility': return 'Administrative Utility Panel';
       default: return 'Dashboard';
     }
   };
