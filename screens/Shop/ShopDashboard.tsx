@@ -50,7 +50,7 @@ const ShopDashboard: React.FC = () => {
       case 'sales':
         return <Sales onNavigate={setView} />;
       case 'salesHistory':
-        return <SalesHistory />;
+        return <SalesHistory onNavigate={setView} />;
       case 'receiptVoucher':
         return <ReceiptVoucher onNavigate={setView} />;
       case 'paymentVoucher':

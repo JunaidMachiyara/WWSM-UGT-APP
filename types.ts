@@ -209,3 +209,17 @@ export interface ExpenseAccount {
   name: string;
   description: string;
 }
+
+// For UI state sharing
+export interface InvoiceSummary {
+    id: string;
+    date: Date;
+    customerId: string;
+    customerName: string;
+    totalAmount: number; // in base currency
+    paidAmount: number; // in base currency
+    balance: number; // in base currency
+    status: 'PAID' | 'PARTIAL' | 'CREDIT';
+    items: Transaction[];
+    reference?: string;
+}

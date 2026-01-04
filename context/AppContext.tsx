@@ -40,7 +40,8 @@ import {
   ExpenseAccount, 
   Asset, 
   AssetStatus,
-  ReceivedExtraItem
+  ReceivedExtraItem,
+  InvoiceSummary
 } from '../types';
 
 export interface SaleItem {
@@ -88,6 +89,8 @@ interface AppContextType {
   currentShopCurrency: Currency;
   isDemoMode: boolean;
   connectionError: string | null;
+  invoiceToEdit: InvoiceSummary | null;
+  setInvoiceToEdit: (invoice: InvoiceSummary | null) => void;
   login: (username: string, password?: string) => Promise<boolean>;
   logout: () => void;
   switchShop: (id: string | null) => void;
@@ -100,12 +103,14 @@ interface AppContextType {
   updateSupplierOpeningBalance: (openingBalance: number) => Promise<void>;
   bulkAddCustomers: (payload: BulkCustomerPayload[]) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  standardizeItemIds: () => Promise<void>;
   bulkSyncProducts: (products: (Partial<Product> & { name: string })[]) => Promise<void>;
   addShopAccount: (account: Omit<ShopAccount, 'id'>) => Promise<void>;
   updateShopAccount: (id: string, data: Partial<ShopAccount>) => Promise<void>;
   updateCurrency: (data: { id: string, rate: number }) => Promise<void>;
   addCurrency: (currency: Currency) => Promise<void>;
   recordSale: (payload: any) => Promise<void>;
+  updateSale: (payload: any) => Promise<void>;
   recordPayment: (payload: any) => Promise<void>;
   addExpense: (payload: any) => Promise<void>;
   addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => Promise<void>;
@@ -159,6 +164,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [users, setUsers] = useState<User[]>([]);
   const [isDemoMode] = useState(false);
   const [connectionError] = useState<string | null>(null);
+  const [invoiceToEdit, setInvoiceToEdit] = useState<InvoiceSummary | null>(null);
 
   useEffect(() => {
     const unsubShops = onSnapshot(collection(db, 'shops'), (s) => setShops(s.docs.map(d => ({ id: d.id, ...d.data() } as Shop))));
@@ -312,8 +318,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           snap.docs.forEach(d => batch.delete(d.ref));
           await batch.commit();
       }
-      // Note: We leave historical sales/receipts intact for audit trailing, 
-      // but the customer entity being gone means they won't appear in lists.
   };
 
   const updateSupplierOpeningBalance = async (openingBalance: number) => {
@@ -326,7 +330,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     );
     const snap = await getDocs(q);
     const rate = currentShopCurrency.rate || 1;
-    const amountBase = openingBalance / rate; // We assume positive is debt to HO (Bill)
+    const amountBase = openingBalance / rate;
 
     if (!snap.empty) {
         const transDoc = snap.docs[0];
@@ -388,22 +392,144 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await batch.commit();
   };
 
-  const addProduct = async (product: Omit<Product, 'id'>) => { await addDoc(collection(db, 'products'), product); };
+  const addProduct = async (productData: Omit<Product, 'id'>) => { 
+      // 1. Calculate next sequential ID
+      const itemsWithNewId = products.filter(p => p.id.startsWith('ITEM-'));
+      let nextSeq = 1001;
+      if (itemsWithNewId.length > 0) {
+          const maxId = Math.max(...itemsWithNewId.map(p => {
+              const suffix = p.id.split('-')[1];
+              return parseInt(suffix) || 0;
+          }));
+          nextSeq = maxId + 1;
+      }
+      const newId = `ITEM-${nextSeq}`;
+      
+      // 2. Set with specific ID
+      await setDoc(doc(db, 'products', newId), productData); 
+  };
   
+  const standardizeItemIds = async () => {
+      console.log("[MIGRATION] Starting Item ID Standardization...");
+      
+      const itemsToMigrate = products.filter(p => !p.id.startsWith('ITEM-'));
+      if (itemsToMigrate.length === 0) {
+          console.log("[MIGRATION] All items already standardized.");
+          return;
+      }
+
+      // Step 1: Build the mapping of Old ID -> New ID
+      const itemsWithId = products.filter(p => p.id.startsWith('ITEM-'));
+      let currentMax = itemsWithId.length > 0 ? Math.max(...itemsWithId.map(p => {
+          const suffix = p.id.split('-')[1];
+          return parseInt(suffix) || 0;
+      })) : 1000;
+
+      const idMap: Record<string, string> = {};
+      itemsToMigrate.forEach(item => {
+          currentMax++;
+          idMap[item.id] = `ITEM-${currentMax}`;
+      });
+
+      // Step 2: Fetch all records that might contain Product IDs
+      const transSnap = await getDocs(collection(db, 'transactions'));
+      const shipmentsSnap = await getDocs(collection(db, 'shipments'));
+
+      // Step 3: Perform updates in batches (limit of 500 per batch)
+      let batch = writeBatch(db);
+      let opCount = 0;
+
+      const commitAndResetBatch = async () => {
+          if (opCount > 0) {
+              await batch.commit();
+              batch = writeBatch(db);
+              opCount = 0;
+          }
+      };
+
+      // 1. Migrate Product Documents
+      for (const item of itemsToMigrate) {
+          const newId = idMap[item.id];
+          const oldId = item.id;
+          
+          const { id, ...data } = item;
+          batch.set(doc(db, 'products', newId), data);
+          batch.delete(doc(db, 'products', oldId));
+          opCount += 2;
+          
+          if (opCount >= 450) await commitAndResetBatch();
+      }
+
+      // 2. Update Transaction References
+      // IMPORTANT: Each document only updated ONCE in the batch.
+      for (const d of transSnap.docs) {
+          const currentPid = d.data().productId;
+          if (currentPid && idMap[currentPid]) {
+              batch.update(d.ref, { productId: idMap[currentPid] });
+              opCount++;
+              if (opCount >= 450) await commitAndResetBatch();
+          }
+      }
+
+      // 3. Update Shipment Manifests
+      for (const d of shipmentsSnap.docs) {
+          const data = d.data();
+          let changed = false;
+          
+          // Regular items
+          const updatedItems = (data.items || []).map((item: any) => {
+              if (idMap[item.productId]) {
+                  changed = true;
+                  return { ...item, productId: idMap[item.productId] };
+              }
+              return item;
+          });
+
+          // Extra items
+          const updatedExtra = (data.extraItemsReceived || []).map((item: any) => {
+            if (idMap[item.productId]) {
+                changed = true;
+                return { ...item, productId: idMap[item.productId] };
+            }
+            return item;
+          });
+
+          if (changed) {
+              batch.update(d.ref, { items: updatedItems, extraItemsReceived: updatedExtra });
+              opCount++;
+              if (opCount >= 450) await commitAndResetBatch();
+          }
+      }
+
+      await commitAndResetBatch();
+      console.log("[MIGRATION] Successfully standardized all item IDs.");
+      window.location.reload();
+  };
+
   const bulkSyncProducts = async (productsData: (Partial<Product> & { name: string })[]) => {
       const batch = writeBatch(db);
       
+      // Determine starting sequence for new items
+      const itemsWithId = products.filter(p => p.id.startsWith('ITEM-'));
+      let currentMax = itemsWithId.length > 0 ? Math.max(...itemsWithId.map(p => {
+          const suffix = p.id.split('-')[1];
+          return parseInt(suffix) || 0;
+      })) : 1000;
+
       productsData.forEach(p => {
           let targetDoc;
+          let idToUse = p.id;
           
-          if (p.id) {
-              targetDoc = doc(db, 'products', p.id);
+          if (idToUse) {
+              targetDoc = doc(db, 'products', idToUse);
           } else {
               const existing = products.find(prod => prod.name.toLowerCase() === p.name.toLowerCase());
               if (existing) {
                   targetDoc = doc(db, 'products', existing.id);
               } else {
-                  targetDoc = doc(collection(db, 'products'));
+                  currentMax++;
+                  idToUse = `ITEM-${currentMax}`;
+                  targetDoc = doc(db, 'products', idToUse);
               }
           }
 
@@ -528,6 +654,74 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await batch.commit();
   };
 
+  const updateSale = async (payload: any) => {
+    const { shopId, customerId, invoiceNumber } = payload;
+    if (!shopId || !customerId || !invoiceNumber) {
+        throw new Error("Missing required fields for update.");
+    }
+
+    const batch = writeBatch(db);
+
+    // 1. Delete all old transactions associated with this invoice.
+    const q = query(
+        collection(db, 'transactions'),
+        where('shopId', '==', shopId),
+        where('invoiceId', '==', invoiceNumber)
+    );
+    const oldTransactionsSnap = await getDocs(q);
+    oldTransactionsSnap.forEach(doc => {
+        if (doc.data().customerId === customerId) {
+            batch.delete(doc.ref);
+        }
+    });
+
+    // 2. Re-create transactions using the same logic as recordSale
+    const { items, cashPaid, advanceApplied, date, paymentAccountId, manualReference } = payload;
+    const rate = Number(currentShopCurrency.rate) || 1;
+    const shop = shops.find(s => s.id === shopId);
+    const totalInvoiceValueLocal = items.reduce((s: number, i: SaleItem) => s + (i.salePrice * i.quantity), 0);
+    const isCreditSale = (Number(cashPaid) + Number(advanceApplied)) < (totalInvoiceValueLocal - 0.01);
+    const saleType = isCreditSale ? TransactionType.CREDIT_SALE : TransactionType.CASH_SALE;
+
+    items.forEach((item: SaleItem) => {
+        const product = products.find(p => p.id === item.productId);
+        const unitPriceBase = (Number(item.salePrice) || 0) / rate;
+        if (product && item.salePrice < product.minSalePrice * rate) {
+            const alertRef = doc(collection(db, 'alerts'));
+            batch.set(alertRef, {
+                shopId: 'HO',
+                type: AlertType.PRICE_VIOLATION,
+                message: `Price Violation (EDIT): ${product.name} sold for ${currentShopCurrency.symbol}${item.salePrice} (Min: ${currentShopCurrency.symbol}${(product.minSalePrice * rate).toFixed(2)}) at ${shop?.name}`,
+                context: { invoiceId: invoiceNumber, productId: item.productId, shopId, shopName: shop?.name },
+                date: Timestamp.fromDate(date),
+                isRead: false
+            });
+        }
+        const saleRef = doc(collection(db, 'transactions'));
+        batch.set(saleRef, {
+            shopId, customerId, invoiceId: invoiceNumber, externalReference: manualReference, productId: item.productId,
+            type: saleType, description: `Sale of ${product?.name}`, amount: unitPriceBase, quantity: Number(item.quantity) || 0,
+            date: Timestamp.fromDate(date), locationId: item.locationId || shopId
+        });
+    });
+
+    if (Number(cashPaid) > 0) {
+        const receiptRef = doc(collection(db, 'transactions'));
+        batch.set(receiptRef, {
+            shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.SALES_RECEIPT, description: `Payment for Invoice #${invoiceNumber}`,
+            amount: (Number(cashPaid) || 0) / rate, date: Timestamp.fromDate(date), paymentAccountId
+        });
+    }
+    if (Number(advanceApplied) > 0) {
+        const advanceRef = doc(collection(db, 'transactions'));
+        batch.set(advanceRef, {
+            shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.ADVANCE_USAGE, description: `Advance applied to Invoice #${invoiceNumber}`,
+            amount: (Number(advanceApplied) || 0) / rate, date: Timestamp.fromDate(date)
+        });
+    }
+    await batch.commit();
+  };
+
   const recordPayment = async (payload: any) => {
       const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'transactions'), {
@@ -560,7 +754,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batch.set(inRef, {
           shopId: payload.shopId, productId: payload.productId, type: TransactionType.STOCK_TRANSFER_IN,
           description: `Transfer from ${warehouses.find(w => w.id === payload.fromLocationId)?.name || 'Other Location'}`,
-          quantity: Number(payload.quantity) || 0, amount: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
+          quantity: Number(payload.quantity) || 0, font: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
       });
       await batch.commit();
   };
@@ -667,71 +861,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       await batch.commit();
   };
 
-  // Helper for deleting entire collections in chunks (Firestore limit is 500 per batch)
-  const chunkedDelete = async (collectionName: string) => {
-      console.log(`[CORE] PURGING: Fetching [${collectionName}]...`);
-      try {
-          const q = await getDocs(collection(db, collectionName));
-          const docs = q.docs;
-          
-          if (docs.length === 0) {
-              console.log(`[CORE] PURGING: [${collectionName}] is already empty.`);
-              return Promise.resolve();
-          }
-
-          console.log(`[CORE] PURGING: Deleting ${docs.length} docs from [${collectionName}]...`);
-          for (let i = 0; i < docs.length; i += 500) {
-              const batch = writeBatch(db);
-              docs.slice(i, i + 500).forEach(d => batch.delete(d.ref));
-              await batch.commit();
-              console.log(`[CORE] PURGING: Batch ${Math.floor(i/500) + 1} of [${collectionName}] complete.`);
-          }
-          return Promise.resolve();
-      } catch (e) {
-          console.error(`[CORE] CHUNKED_DELETE_ERROR: [${collectionName}]`, e);
-          throw e;
-      }
-  };
-
   const resetSystem = async () => {
       console.log("[CORE] FACTORY_RESET: Initiating...");
       const colls = ['shops', 'products', 'transactions', 'shipments', 'alerts', 'customers', 'warehouses', 'accounts', 'currencies', 'clearingAgents', 'freightForwarders', 'customExpenseTypes', 'expenseAccounts', 'assets', 'users'];
       for (const c of colls) {
           try {
-              await chunkedDelete(c);
+              const q = await getDocs(collection(db, c));
+              const batch = writeBatch(db);
+              q.docs.forEach(d => batch.delete(d.ref));
+              await batch.commit();
           } catch (e: any) {
               console.error(`[CORE] FACTORY_RESET_ERR: Failed to clear [${c}]: ${e.message}`);
           }
       }
-      console.log("[CORE] FACTORY_RESET: Success. System Clean.");
       window.location.reload();
   };
 
   const clearTransactions = async () => {
-      console.log("[CORE] LEDGER_RESET: Starting...");
       try {
-          // Purge all history
-          await chunkedDelete('transactions');
-          await chunkedDelete('shipments');
-          await chunkedDelete('alerts');
+          const trans = await getDocs(collection(db, 'transactions'));
+          const ships = await getDocs(collection(db, 'shipments'));
+          const alts = await getDocs(collection(db, 'alerts'));
           
-          // Reset opening balances to zero
-          console.log("[CORE] LEDGER_RESET: Zeroing accounts...");
-          const q4 = await getDocs(collection(db, 'accounts'));
-          const accountDocs = q4.docs;
-          if (accountDocs.length > 0) {
-              for (let i = 0; i < accountDocs.length; i += 500) {
-                  const batch = writeBatch(db);
-                  accountDocs.slice(i, i + 500).forEach(d => {
-                      batch.update(d.ref, { openingBalance: 0 });
-                  });
-                  await batch.commit();
-              }
+          for (const coll of [trans, ships, alts]) {
+              const batch = writeBatch(db);
+              coll.docs.forEach(d => batch.delete(d.ref));
+              await batch.commit();
           }
-          console.log("[CORE] LEDGER_RESET: Done.");
-          return Promise.resolve();
+
+          const q4 = await getDocs(collection(db, 'accounts'));
+          const batchAcc = writeBatch(db);
+          q4.docs.forEach(d => batchAcc.update(d.ref, { openingBalance: 0 }));
+          await batchAcc.commit();
       } catch (e) {
-          console.error("[CORE] LEDGER_RESET_ERROR:", e);
+          console.error(e);
           throw e;
       }
   };
@@ -747,8 +910,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const value = {
     currentUser, role, shopId, shops, products, transactions, shipments, alerts, customers, warehouses,
     shopAccounts, currencies, clearingAgents, freightForwarders, customExpenseTypes, expenseAccounts, assets,
-    currentShopCurrency, isDemoMode, connectionError, login, logout, switchShop, addShop, updateShop, deleteShop,
-    addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, recordPayment,
+    currentShopCurrency, isDemoMode, connectionError, invoiceToEdit, setInvoiceToEdit, login, logout, switchShop, addShop, updateShop, deleteShop,
+    addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, standardizeItemIds, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, updateSale, recordPayment,
     addExpense, addWarehouse, transferStock, addAsset, recordAdvance, receiveShipment, addExport, updateShipmentCosts,
     recordPaymentVoucher, recordSalesReturn, addOpeningStock, bulkAddOpeningStock, markAlertAsRead, logAlert,
     resetSystem, clearTransactions, getStockLevel, getAdvanceBalance, formatCurrency, users, addUser, updateUser,

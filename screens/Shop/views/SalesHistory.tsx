@@ -1,20 +1,8 @@
 
 import React, { useState, useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { TransactionType } from '../../../types';
-
-interface InvoiceSummary {
-    id: string;
-    date: Date;
-    customerId: string;
-    customerName: string;
-    totalAmount: number;
-    paidAmount: number;
-    balance: number;
-    status: 'PAID' | 'PARTIAL' | 'CREDIT';
-    items: any[];
-    reference?: string;
-}
+import { TransactionType, InvoiceSummary, Transaction } from '../../../types';
+import { ShopView } from '../ShopDashboard';
 
 type SortField = 'date' | 'id' | 'customerName' | 'status';
 
@@ -23,8 +11,12 @@ interface SortConfig {
     direction: 'asc' | 'desc';
 }
 
-const SalesHistory: React.FC = () => {
-    const { shopId, transactions, customers, formatCurrency, products } = useAppContext();
+interface SalesHistoryProps {
+  onNavigate?: (view: ShopView) => void;
+}
+
+const SalesHistory: React.FC<SalesHistoryProps> = ({ onNavigate }) => {
+    const { shopId, transactions, customers, formatCurrency, products, setInvoiceToEdit } = useAppContext();
     
     // Filters
     const [searchTerm, setSearchTerm] = useState('');
@@ -43,54 +35,49 @@ const SalesHistory: React.FC = () => {
         const invoiceMap: Record<string, InvoiceSummary> = {};
 
         shopTransactions.forEach(t => {
-            // We only care about transactions linked to an invoice
-            if (!t.invoiceId) return;
+            if (!t.invoiceId || !t.customerId) return;
+            const invoiceKey = `${t.invoiceId}-${t.customerId}`;
 
-            if (!invoiceMap[t.invoiceId]) {
+            if (!invoiceMap[invoiceKey]) {
                 const customer = customers.find(c => c.id === t.customerId);
-                invoiceMap[t.invoiceId] = {
+                invoiceMap[invoiceKey] = {
                     id: t.invoiceId,
                     date: t.date,
-                    customerId: t.customerId || '',
+                    customerId: t.customerId,
                     customerName: customer?.name || 'Unknown Customer',
                     totalAmount: 0,
                     paidAmount: 0,
                     balance: 0,
                     status: 'CREDIT',
                     items: [],
-                    reference: t.externalReference || '',
+                    reference: '',
                 };
             }
+            
+            const inv = invoiceMap[invoiceKey];
 
-            // If it's a Sale Item (Product)
             if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE) {
-                invoiceMap[t.invoiceId].totalAmount += (t.amount * (t.quantity || 1));
-                invoiceMap[t.invoiceId].items.push(t);
-                // Update date to match transaction (incase grouping order issues)
-                invoiceMap[t.invoiceId].date = t.date; 
+                inv.totalAmount += (t.amount * (t.quantity || 1));
+                inv.items.push(t);
+                if (new Date(t.date) > new Date(inv.date)) inv.date = t.date;
+                if (t.externalReference) inv.reference = t.externalReference;
             }
 
-            // If it's a Payment/Receipt linked to this invoice
             if (t.type === TransactionType.SALES_RECEIPT || t.type === TransactionType.ADVANCE_USAGE) {
-                invoiceMap[t.invoiceId].paidAmount += t.amount;
+                inv.paidAmount += t.amount;
             }
             
-            // If it's a Return
             if (t.type === TransactionType.SALES_RETURN) {
-                // Returns reduce the total invoice value effectively, or we track it separately. 
-                // For this view, let's reduce the Total Amount so balance reflects accurately.
-                invoiceMap[t.invoiceId].totalAmount -= (t.amount * (t.quantity || 1));
+                inv.totalAmount -= (t.amount * (t.quantity || 1));
             }
         });
 
-        // Calculate Balances & Status
         return Object.values(invoiceMap).map(inv => {
-            // Floating point fix
             inv.totalAmount = parseFloat(inv.totalAmount.toFixed(2));
             inv.paidAmount = parseFloat(inv.paidAmount.toFixed(2));
             inv.balance = inv.totalAmount - inv.paidAmount;
 
-            if (inv.balance <= 0.01) inv.status = 'PAID'; // Tolerance for float errors
+            if (inv.balance <= 0.01) inv.status = 'PAID';
             else if (inv.paidAmount > 0) inv.status = 'PARTIAL';
             else inv.status = 'CREDIT';
 
@@ -131,6 +118,13 @@ const SalesHistory: React.FC = () => {
             return 0;
         });
     }, [invoices, searchTerm, startDate, endDate, sortConfig]);
+    
+    const handleEditInvoice = () => {
+        if (!selectedInvoice || !onNavigate) return;
+        setInvoiceToEdit(selectedInvoice);
+        onNavigate('sales');
+        setSelectedInvoice(null);
+    };
 
     const SortIcon = ({ field }: { field: SortField }) => {
         if (sortConfig.field !== field) return (
@@ -207,7 +201,7 @@ const SalesHistory: React.FC = () => {
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-100">
                             {sortedAndFilteredInvoices.length > 0 ? sortedAndFilteredInvoices.map(inv => (
-                                <tr key={inv.id} className="hover:bg-blue-50/30 transition-colors">
+                                <tr key={`${inv.id}-${inv.customerId}`} className="hover:bg-blue-50/30 transition-colors">
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">{new Date(inv.date).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">
                                         <button 
@@ -267,14 +261,14 @@ const SalesHistory: React.FC = () => {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100 bg-white">
-                                        {selectedInvoice.items.map((item: any, idx: number) => {
+                                        {selectedInvoice.items.map((item: Transaction, idx: number) => {
                                             const product = products.find(p => p.id === item.productId);
                                             return (
                                                 <tr key={idx}>
                                                     <td className="px-4 py-3 text-sm text-gray-900 font-bold">{product?.name || 'Unknown'}</td>
                                                     <td className="px-4 py-3 text-sm text-center text-gray-700 font-medium">{item.quantity}</td>
                                                     <td className="px-4 py-3 text-sm text-right text-gray-700 font-medium">{formatCurrency(item.amount)}</td>
-                                                    <td className="px-4 py-3 text-sm text-right font-black text-gray-900">{formatCurrency(item.amount * item.quantity)}</td>
+                                                    <td className="px-4 py-3 text-sm text-right font-black text-gray-900">{formatCurrency(item.amount * (item.quantity || 1))}</td>
                                                 </tr>
                                             );
                                         })}
@@ -302,8 +296,9 @@ const SalesHistory: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end">
-                            <button onClick={() => setSelectedInvoice(null)} className="bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 font-black py-2.5 px-8 rounded-xl transition-all shadow-sm active:scale-95 text-sm uppercase">Close Window</button>
+                        <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end space-x-3">
+                            <button onClick={() => setSelectedInvoice(null)} className="bg-white border border-gray-200 hover:bg-gray-100 text-gray-800 font-black py-2.5 px-6 rounded-xl transition-all shadow-sm active:scale-95 text-sm uppercase">Close</button>
+                            <button onClick={handleEditInvoice} className="bg-blue-600 hover:bg-blue-700 text-white font-black py-2.5 px-6 rounded-xl transition-all shadow-md active:scale-95 text-sm uppercase">Edit Invoice</button>
                         </div>
                     </div>
                 </div>
