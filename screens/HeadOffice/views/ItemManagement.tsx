@@ -81,12 +81,12 @@ const ItemManagement: React.FC = () => {
       }
   };
 
-  // CSV Helper: Download Template
+  // CSV Helper: Download Template for format
   const downloadTemplate = () => {
-      const headers = ['Product ID', 'Name', 'Category', 'HO Cost', 'Min Sale Price', 'Weight (Kg)'];
+      const headers = ['"Product ID"', '"Name"', '"Category"', '"HO Cost"', '"Min Sale Price"', '"Weight (Kg)"', '"Notes"'];
       const rows = [
-          ['ITEM-1001', 'Sample Product A', 'Electronics', '150.00', '200.00', '2.5'],
-          ['ITEM-1002', 'Sample Product B', 'Furniture', '85.50', '120.00', '15.0']
+          ['"ITEM-1005"', '"Existing Item Name"', '"Category Name"', '"150.00"', '"200.00"', '"2.5"', '"To UPDATE an item, provide its existing Product ID. The system will match by ID and update the other columns."'],
+          ['""', '"New Widget 9000"', '"Gadgets"', '"85.50"', '"120.00"', '"15.0"', '"To create a NEW item, leave the Product ID column blank. The system will check if the name exists. If not, a new ID will be assigned automatically."']
       ];
       
       const csvContent = "data:text/csv;charset=utf-8," 
@@ -96,7 +96,7 @@ const ItemManagement: React.FC = () => {
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute("download", "items_import_template.csv");
+      link.setAttribute("download", "item_import_format.csv");
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -153,7 +153,7 @@ const ItemManagement: React.FC = () => {
               return;
           }
 
-          const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[()]/g, ''));
+          const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[()"]/g, ''));
           
           const idIdx = headers.findIndex(h => h.includes('id'));
           const nameIdx = headers.findIndex(h => h === 'name');
@@ -300,12 +300,21 @@ const ItemManagement: React.FC = () => {
                                 Standardize IDs
                             </button>
                         )}
+                         <button 
+                            onClick={downloadTemplate}
+                            className="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-black py-2 px-3 rounded-lg border border-blue-200 flex items-center uppercase tracking-widest transition-all"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            CSV Format
+                        </button>
                         <button 
                             onClick={exportCurrentList}
                             className="text-[10px] bg-green-50 hover:bg-green-100 text-green-700 font-black py-2 px-3 rounded-lg border border-green-200 flex items-center uppercase tracking-widest transition-all"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                            Export to Excel (CSV)
+                            Export to Excel
                         </button>
                     </div>
                 </div>
@@ -325,7 +334,7 @@ const ItemManagement: React.FC = () => {
                             </svg>
                         </div>
                         <span className="text-primary font-bold hover:underline italic">Import Item Updates via CSV</span>
-                        <span className="text-[10px] text-gray-400 mt-2 font-black uppercase tracking-widest italic">Matches record by ID (e.g. ITEM-1001)</span>
+                        <span className="text-[10px] text-gray-400 mt-2 font-black uppercase tracking-widest italic">Matches record by ID (e.g. ITEM-1001) or Name</span>
                     </label>
                     {csvFile && <p className="mt-4 text-sm font-bold text-gray-800 bg-white inline-block px-4 py-1 rounded-full shadow-sm border border-gray-100">File: {csvFile.name}</p>}
                 </div>

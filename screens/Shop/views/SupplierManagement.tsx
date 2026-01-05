@@ -42,19 +42,50 @@ const SupplierManagement: React.FC = () => {
         }
     };
 
+    const downloadTemplate = () => {
+        const headers = ['SupplierName', 'BalanceDescription', 'Amount', 'Note'];
+        const rows = [
+            ['Head Office', 'Opening Payable Balance', '5000.00', 'Enter the total amount your shop owes to the Head Office from before using this system. A positive number means you owe them.'],
+            ['Head Office', 'Opening Receivable Balance', '-2500.00', 'Use a negative number if the Head Office owes your shop money (e.g., for overpayment).']
+        ];
+        
+        const csvContent = "data:text/csv;charset=utf-8," 
+            + headers.join(",") + "\n" 
+            + rows.map(e => `"${e.join('","')}"`).join("\n");
+            
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "supplier_balance_format.csv");
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
         <div className="max-w-3xl mx-auto space-y-8">
             <div className="bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
-                <div className="flex items-center space-x-4 mb-8">
-                    <div className="bg-blue-600 p-4 rounded-2xl text-white shadow-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                <div className="flex items-center justify-between mb-8">
+                    <div className="flex items-center space-x-4">
+                        <div className="bg-blue-600 p-4 rounded-2xl text-white shadow-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter italic">Supplier Setup: Head Office</h2>
+                            <p className="text-sm text-gray-500 font-bold uppercase tracking-widest">Main Exporter & System Admin</p>
+                        </div>
+                    </div>
+                    <button 
+                        onClick={downloadTemplate}
+                        className="text-[10px] bg-blue-50 hover:bg-blue-100 text-blue-700 font-black py-2 px-4 rounded-lg border border-blue-200 flex items-center uppercase tracking-widest transition-all"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                         </svg>
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tighter italic">Supplier Setup: Head Office</h2>
-                        <p className="text-sm text-gray-500 font-bold uppercase tracking-widest">Main Exporter & System Admin</p>
-                    </div>
+                        Download CSV Format
+                    </button>
                 </div>
 
                 {successMessage && (

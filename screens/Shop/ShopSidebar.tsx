@@ -58,6 +58,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
   ];
   
   const reportItems = [
+      { id: 'dayBook', label: 'Day Book'},
       { id: 'inventory', label: 'Inventory Stock' },
       { id: 'reports-income', label: 'Income Statement' },
       { id: 'balanceSheet', label: 'Balance Sheet' },
