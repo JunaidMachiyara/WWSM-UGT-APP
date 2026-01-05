@@ -54,7 +54,11 @@ const ExclamationIcon: React.FC<ExclamationIconProps> = ({ colorClass = 'text-gr
 );
 
 const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
-  const { shopId, products, recordSale, customers, addCustomer, addProduct, addShopAccount, currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, formatCurrency, transactions } = useAppContext();
+  const { 
+      shopId, products, recordSale, updateSale, customers, addCustomer, addProduct, addShopAccount, 
+      currentShopCurrency, shopAccounts, getStockLevel, warehouses, shops, getAdvanceBalance, 
+      formatCurrency, transactions, invoiceToEdit, setInvoiceToEdit 
+  } = useAppContext();
   
   const [items, setItems] = useState<InvoiceItem[]>([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
   const [customerId, setCustomerId] = useState('');
@@ -66,6 +70,8 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const [invoiceNumber, setInvoiceNumber] = useState('');
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   
+  const [isEditMode, setIsEditMode] = useState(false);
+
   const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
@@ -77,7 +83,6 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const [newProductMinSalePrice, setNewProductMinSalePrice] = useState<number | ''>(0);
   const [newProductWeight, setNewProductWeight] = useState<number | ''>(0);
 
-  // Quick Add Account Modal State
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
@@ -103,13 +108,60 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
       ...shopWarehouses.map(w => ({ id: w.id, name: w.name }))
     ];
   }, [shops, warehouses, shopId]);
+  
+  const resetForm = () => {
+    setItems([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
+    setCustomerId('');
+    setCashPaid(0);
+    setAdvanceApplied(0);
+    setSaleDate(new Date().toISOString().split('T')[0]);
+    setPaymentAccountId('');
+    setManualRef('');
+  };
+
+  useEffect(() => {
+    if (invoiceToEdit && shopId) {
+        setIsEditMode(true);
+
+        const cashTx = invoiceToEdit.transactionDocs.find(t => t.type === TransactionType.SALES_RECEIPT);
+        const advanceTx = invoiceToEdit.transactionDocs.find(t => t.type === TransactionType.ADVANCE_USAGE);
+
+        setCustomerId(invoiceToEdit.customerId);
+        setSaleDate(new Date(invoiceToEdit.date).toISOString().split('T')[0]);
+        setInvoiceNumber(invoiceToEdit.id);
+        setManualRef(invoiceToEdit.reference || '');
+        
+        setCashPaid(cashTx ? cashTx.amount * currentShopCurrency.rate : 0);
+        setPaymentAccountId(cashTx ? cashTx.paymentAccountId || '' : '');
+        setAdvanceApplied(advanceTx ? advanceTx.amount * currentShopCurrency.rate : 0);
+        
+        const invoiceItems = invoiceToEdit.items.map(t => {
+            const product = products.find(p => p.id === t.productId);
+            const currentStock = getStockLevel(t.productId!, t.locationId!);
+            const stockBeforeThisSale = currentStock + (t.quantity || 0);
+
+            return {
+                productId: t.productId!,
+                quantity: t.quantity || 0,
+                salePrice: t.amount * currentShopCurrency.rate,
+                locationId: t.locationId || shopId,
+                stock: stockBeforeThisSale,
+                minSalePrice: product ? product.minSalePrice * currentShopCurrency.rate : 0,
+            };
+        });
+        setItems(invoiceItems);
+    } else {
+        setIsEditMode(false);
+        resetForm();
+    }
+  }, [invoiceToEdit, shopId, products, getStockLevel, currentShopCurrency.rate]);
 
   useEffect(() => {
     setAdvanceApplied(0);
   }, [customerId]);
 
   useEffect(() => {
-    if (!shopId) return;
+    if (!shopId || isEditMode) return;
     const generateInvoiceNumber = () => {
         const today = new Date();
         const mm = String(today.getMonth() + 1).padStart(2, '0');
@@ -133,7 +185,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
         return `${nextSeq}-${dateSuffix}`;
     };
     setInvoiceNumber(generateInvoiceNumber());
-  }, [shopId, transactions, saleDate]); 
+  }, [shopId, transactions, saleDate, isEditMode]); 
 
   const handleItemChange = (index: number, field: keyof InvoiceItem, value: any) => {
     const newItems = [...items];
@@ -173,16 +225,6 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
     }
   };
 
-  const resetForm = () => {
-    setItems([{ productId: '', quantity: 1, salePrice: 0, stock: 0, minSalePrice: 0, locationId: shopId! }]);
-    setCustomerId('');
-    setCashPaid(0);
-    setAdvanceApplied(0);
-    setSaleDate(new Date().toISOString().split('T')[0]);
-    setPaymentAccountId('');
-    setManualRef('');
-  };
-
   const totalAmount = useMemo(() => {
     return items.reduce((sum, item) => {
       if (item.productId && Number(item.quantity) > 0 && Number(item.salePrice) > 0) {
@@ -204,6 +246,10 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
     const validValue = Math.max(0, Math.min(val, localAdvanceBalance, totalAmount));
     setAdvanceApplied(validValue);
   }
+  
+  const cancelEdit = () => {
+    setInvoiceToEdit(null); // This will trigger the useEffect to reset the form.
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,28 +278,56 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
     
     try {
         const dateForTransaction = new Date(saleDate + 'T00:00:00');
-        await recordSale({
-          shopId,
-          customerId,
-          invoiceNumber,
-          manualReference: manualRef,
-          items: itemsWithProduct.map(i => ({
-              productId: i.productId,
-              quantity: Number(i.quantity),
-              salePrice: Number(i.salePrice),
-              locationId: i.locationId
-          })),
-          cashPaid: Number(cashPaid) || 0,
-          advanceApplied: Number(advanceApplied) || 0,
-          date: dateForTransaction,
-          paymentAccountId,
-        });
+        
+        if (isEditMode) {
+            if (!invoiceToEdit) throw new Error("Editing invoice but no invoice data is loaded.");
+            
+            const deletedTransactionIds = invoiceToEdit.transactionDocs.map(doc => doc.id);
+            const payload = {
+                shopId,
+                customerId,
+                invoiceNumber,
+                manualReference: manualRef,
+                items: itemsWithProduct.map(i => ({
+                    productId: i.productId,
+                    quantity: Number(i.quantity),
+                    salePrice: Number(i.salePrice),
+                    locationId: i.locationId
+                })),
+                cashPaid: Number(cashPaid) || 0,
+                advanceApplied: Number(advanceApplied) || 0,
+                date: dateForTransaction,
+                paymentAccountId,
+                deletedTransactionIds,
+            };
+
+            await updateSale(payload);
+            setInvoiceToEdit(null);
+        } else {
+             const payload = {
+                shopId,
+                customerId,
+                invoiceNumber,
+                manualReference: manualRef,
+                items: itemsWithProduct.map(i => ({
+                    productId: i.productId,
+                    quantity: Number(i.quantity),
+                    salePrice: Number(i.salePrice),
+                    locationId: i.locationId
+                })),
+                cashPaid: Number(cashPaid) || 0,
+                advanceApplied: Number(advanceApplied) || 0,
+                date: dateForTransaction,
+                paymentAccountId,
+            };
+            await recordSale(payload);
+        }
         
         setShowSuccessModal(true);
         resetForm();
     } catch (err) {
         console.error(err);
-        alert('Failed to record sale. Please try again.');
+        alert(`Failed to ${isEditMode ? 'update' : 'record'} sale. Please try again.`);
     }
   };
 
@@ -346,7 +420,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
 
   return (
     <div className="bg-white p-8 rounded-lg shadow-lg max-w-7xl mx-auto">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">Record New Invoice</h2>
+      <h2 className="text-2xl font-bold mb-6 text-gray-800">{isEditMode ? `Editing Invoice #${invoiceNumber}` : 'Record New Invoice'}</h2>
       
       <form onSubmit={handleSubmit} className="space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -375,7 +449,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
              <div>
                 <label htmlFor="invoiceNumber" className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
                 <input type="text" id="invoiceNumber" value={invoiceNumber} readOnly className="block w-full border border-gray-200 bg-gray-100 rounded-md shadow-sm p-2 text-gray-600 cursor-not-allowed" />
-                <p className="text-xs text-gray-500 mt-1">Auto-generated sequence</p>
+                <p className="text-xs text-gray-500 mt-1">{isEditMode ? 'Editing existing invoice' : 'Auto-generated sequence'}</p>
             </div>
             <div>
                 <label htmlFor="manualRef" className="block text-sm font-medium text-gray-700 mb-1">Manual Reference (Ref)</label>
@@ -513,11 +587,16 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             </div>
         </div>
 
-        <div className="flex justify-end">
-          <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold py-3 px-12 rounded-lg transition duration-300 shadow-md">
-            Record Sale
-          </button>
-        </div>
+        {isEditMode ? (
+            <div className="flex justify-end space-x-4">
+                <button type="button" onClick={cancelEdit} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-3 px-8 rounded-lg transition-colors">Cancel Edit</button>
+                <button type="submit" className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-12 rounded-lg shadow-md transition-colors">Update Invoice</button>
+            </div>
+        ) : (
+            <div className="flex justify-end">
+                <button type="submit" className="bg-primary hover:bg-primary-dark text-white font-bold py-3 px-12 rounded-lg transition duration-300 shadow-md">Record Sale</button>
+            </div>
+        )}
       </form>
 
       {/* Success Confirmation Modal */}
@@ -529,15 +608,15 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7"></path>
                     </svg>
                 </div>
-                <h3 className="text-2xl font-black text-gray-900 mb-2">Sales Recorded!</h3>
-                <p className="text-gray-500 mb-8 font-medium">Invoice generated successfully.</p>
+                <h3 className="text-2xl font-black text-gray-900 mb-2">Success!</h3>
+                <p className="text-gray-500 mb-8 font-medium">Invoice {isEditMode ? 'updated' : 'generated'} successfully.</p>
                 
                 <div className="space-y-3">
                     <button 
                         onClick={() => setShowSuccessModal(false)}
                         className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark transition-all shadow-lg active:scale-95"
                     >
-                        Record Another
+                        {isEditMode ? 'Go to History' : 'Record Another'}
                     </button>
                     <button 
                         onClick={() => onNavigate?.('dashboard')}

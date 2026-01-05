@@ -1,4 +1,3 @@
-
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../firebase';
 import { 
@@ -111,6 +110,7 @@ interface AppContextType {
   addCurrency: (currency: Currency) => Promise<void>;
   recordSale: (payload: any) => Promise<void>;
   updateSale: (payload: any) => Promise<void>;
+  deleteInvoice: (transactionIdsToDelete: string[]) => Promise<void>;
   recordPayment: (payload: any) => Promise<void>;
   addExpense: (payload: any) => Promise<void>;
   addWarehouse: (warehouse: Omit<Warehouse, 'id'>) => Promise<void>;
@@ -655,24 +655,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateSale = async (payload: any) => {
-    const { shopId, customerId, invoiceNumber } = payload;
-    if (!shopId || !customerId || !invoiceNumber) {
-        throw new Error("Missing required fields for update.");
+    const { shopId, customerId, invoiceNumber, deletedTransactionIds } = payload;
+    if (!shopId || !customerId || !invoiceNumber || !Array.isArray(deletedTransactionIds)) {
+        throw new Error("Invalid payload for updateSale. Required fields are missing or malformed.");
     }
 
     const batch = writeBatch(db);
 
-    // 1. Delete all old transactions associated with this invoice.
-    const q = query(
-        collection(db, 'transactions'),
-        where('shopId', '==', shopId),
-        where('invoiceId', '==', invoiceNumber)
-    );
-    const oldTransactionsSnap = await getDocs(q);
-    oldTransactionsSnap.forEach(doc => {
-        if (doc.data().customerId === customerId) {
-            batch.delete(doc.ref);
-        }
+    // 1. Delete all old transactions by their unique document IDs for robustness.
+    deletedTransactionIds.forEach((id: string) => {
+        batch.delete(doc(db, 'transactions', id));
     });
 
     // 2. Re-create transactions using the same logic as recordSale
@@ -722,6 +714,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await batch.commit();
   };
 
+  const deleteInvoice = async (transactionIdsToDelete: string[]) => {
+      const batch = writeBatch(db);
+      transactionIdsToDelete.forEach(id => {
+          batch.delete(doc(db, 'transactions', id));
+      });
+      await batch.commit();
+  };
+
   const recordPayment = async (payload: any) => {
       const rate = Number(currentShopCurrency.rate) || 1;
       await addDoc(collection(db, 'transactions'), {
@@ -754,7 +754,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batch.set(inRef, {
           shopId: payload.shopId, productId: payload.productId, type: TransactionType.STOCK_TRANSFER_IN,
           description: `Transfer from ${warehouses.find(w => w.id === payload.fromLocationId)?.name || 'Other Location'}`,
-          quantity: Number(payload.quantity) || 0, font: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
+// FIX: Corrected a typo from `font` to `amount` to match the Transaction interface.
+          quantity: Number(payload.quantity) || 0, amount: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
       });
       await batch.commit();
   };
@@ -911,7 +912,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     currentUser, role, shopId, shops, products, transactions, shipments, alerts, customers, warehouses,
     shopAccounts, currencies, clearingAgents, freightForwarders, customExpenseTypes, expenseAccounts, assets,
     currentShopCurrency, isDemoMode, connectionError, invoiceToEdit, setInvoiceToEdit, login, logout, switchShop, addShop, updateShop, deleteShop,
-    addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, standardizeItemIds, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, updateSale, recordPayment,
+    addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, standardizeItemIds, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, updateSale, deleteInvoice, recordPayment,
     addExpense, addWarehouse, transferStock, addAsset, recordAdvance, receiveShipment, addExport, updateShipmentCosts,
     recordPaymentVoucher, recordSalesReturn, addOpeningStock, bulkAddOpeningStock, markAlertAsRead, logAlert,
     resetSystem, clearTransactions, getStockLevel, getAdvanceBalance, formatCurrency, users, addUser, updateUser,

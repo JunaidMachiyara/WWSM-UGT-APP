@@ -221,5 +221,6 @@ export interface InvoiceSummary {
     balance: number; // in base currency
     status: 'PAID' | 'PARTIAL' | 'CREDIT';
     items: Transaction[];
+    transactionDocs: Transaction[]; // All related raw docs for robust editing
     reference?: string;
 }

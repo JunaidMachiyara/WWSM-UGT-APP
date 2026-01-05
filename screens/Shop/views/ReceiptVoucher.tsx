@@ -25,16 +25,16 @@ const ReceiptVoucher: React.FC<ReceiptVoucherProps> = ({ onNavigate }) => {
     useEffect(() => {
         if (customerId) {
             const customerTransactions = transactions.filter(t => t.customerId === customerId && t.shopId === shopId);
-            
-            const totalDebits = customerTransactions
-                .filter(t => t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE)
-                .reduce((sum, t) => sum + (t.amount * (t.quantity || 1)), 0);
-
-            const totalCredits = customerTransactions
-                .filter(t => t.type === TransactionType.SALES_RECEIPT)
-                .reduce((sum, t) => sum + t.amount, 0);
-
-            setCustomerBalance(totalDebits - totalCredits);
+            let balance = 0;
+            customerTransactions.forEach(t => {
+                if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE) {
+                    balance += (t.amount * (t.quantity || 1));
+                } else if (t.type === TransactionType.SALES_RECEIPT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.ADVANCE_USAGE) {
+                    const creditValue = (t.type === TransactionType.SALES_RETURN) ? (t.amount * (t.quantity || 1)) : t.amount;
+                    balance -= creditValue;
+                }
+            });
+            setCustomerBalance(balance);
         } else {
             setCustomerBalance(0);
         }
