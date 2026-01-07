@@ -1,10 +1,18 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useAppContext, OpeningStockPayload } from '../../../context/AppContext';
-import { TransactionType } from '../../../types';
+import { TransactionType, Product } from '../../../types';
+
+interface BulkItemPreview extends Partial<Product> {
+    productName: string;
+    quantity: number;
+    unitCost: number;
+    notes?: string;
+    action: 'NEW' | 'UPDATE';
+}
 
 const Inventory: React.FC = () => {
-  const { shopId, products, warehouses, getStockLevel, shops, formatCurrency, transactions, currentShopCurrency, bulkAddOpeningStock } = useAppContext();
+  const { shopId, products, warehouses, getStockLevel, shops, formatCurrency, transactions, currentShopCurrency, bulkAddOpeningStock, bulkSyncProducts } = useAppContext();
   
   const [selectedLocationId, setSelectedLocationId] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -13,11 +21,21 @@ const Inventory: React.FC = () => {
 
   // Bulk Import State
   const [csvFile, setCsvFile] = useState<File | null>(null);
-  const [csvPreviewData, setCsvPreviewData] = useState<any[]>([]);
+  const [csvPreviewData, setCsvPreviewData] = useState<BulkItemPreview[]>([]);
   const [bulkLocationId, setBulkLocationId] = useState('');
   const [csvError, setCsvError] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importSuccess, setImportSuccess] = useState('');
+  const [operationLog, setOperationLog] = useState<string[]>([]);
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [operationLog]);
+
+  const log = (msg: string) => {
+    setOperationLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+  };
 
   const currentShop = shops.find(s => s.id === shopId);
   const shopWarehouses = warehouses.filter(w => w.shopId === shopId);
@@ -37,15 +55,11 @@ const Inventory: React.FC = () => {
 
   // Bulk Import Logic
   const downloadTemplate = () => {
-      const headers = ['Product ID', 'Product Name', 'Category', 'Initial Qty', 'Unit Cost (Local)', 'Notes'];
-      const rows = products.map(p => [
-          p.id,
-          p.name.replace(/,/g, ''), 
-          p.category,
-          '0', 
-          (p.hoCost * currentShopCurrency.rate).toFixed(2),
-          'Migration Initialization'
-      ]);
+      const headers = ['"Product Name"', '"Category"', '"HO Cost (USD)"', '"Min Sale Price (USD)"', '"Weight (Kg)"', '"Quantity"', '"Unit Cost (Local)"', '"Notes"'];
+      const rows = [
+          ['"Example New Item"', '"Electronics"', '"150.00"', '"220.00"', '"1.2"', '"10"', `"${(150 * currentShopCurrency.rate * 1.1).toFixed(2)}"`, '"Initial stock count"'],
+          ['"Existing Item Name"', '"Gadgets"', '"85.50"', '"120.00"', '"0.5"', '"50"', `"${(85.50 * currentShopCurrency.rate * 1.1).toFixed(2)}"`, '"Restock"']
+      ];
       
       const csvContent = "data:text/csv;charset=utf-8," 
           + headers.join(",") + "\n" 
@@ -54,7 +68,7 @@ const Inventory: React.FC = () => {
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute("download", `inventory_init_template_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute("download", `stock_and_product_sync_template.csv`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -63,6 +77,8 @@ const Inventory: React.FC = () => {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setCsvError('');
       setImportSuccess('');
+      setOperationLog([]);
+      setCsvPreviewData([]);
       if (e.target.files && e.target.files[0]) {
           setCsvFile(e.target.files[0]);
           parseCSV(e.target.files[0]);
@@ -75,45 +91,48 @@ const Inventory: React.FC = () => {
           const text = event.target?.result as string;
           if (!text) return;
 
-          const lines = text.split('\n');
+          const lines = text.split('\n').filter(line => line.trim() !== '');
           if (lines.length < 2) {
               setCsvError('File appears empty or missing headers.');
               return;
           }
 
-          const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-          const pidIdx = headers.indexOf('product id');
-          const qtyIdx = headers.findIndex(h => h.includes('qty') || h.includes('quantity'));
-          const costIdx = headers.findIndex(h => h.includes('cost') || h.includes('price'));
+          const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/[()"]/g, ''));
+          const nameIdx = headers.indexOf('product name');
+          const catIdx = headers.indexOf('category');
+          const hoCostIdx = headers.indexOf('ho cost usd');
+          const minPriceIdx = headers.indexOf('min sale price usd');
+          const weightIdx = headers.indexOf('weight kg');
+          const qtyIdx = headers.indexOf('quantity');
+          const unitCostIdx = headers.indexOf('unit cost local');
           const notesIdx = headers.indexOf('notes');
 
-          if (pidIdx === -1 || qtyIdx === -1 || costIdx === -1) {
-              setCsvError('Required columns missing: Product ID, Initial Qty, Unit Cost (Local).');
+          if (nameIdx === -1 || qtyIdx === -1 || unitCostIdx === -1) {
+              setCsvError('Required columns missing: Product Name, Quantity, Unit Cost (Local).');
               return;
           }
 
-          const parsed: any[] = [];
+          const parsed: BulkItemPreview[] = [];
           let skipped = 0;
 
           for (let i = 1; i < lines.length; i++) {
-              const line = lines[i].trim();
-              if (!line) continue;
-
-              const cols = line.split(',').map(c => c.trim());
-              const pid = cols[pidIdx];
+              const cols = lines[i].split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+              const name = cols[nameIdx];
               const qty = parseInt(cols[qtyIdx]);
-              const cost = parseFloat(cols[costIdx]);
-              const note = notesIdx !== -1 ? cols[notesIdx] : '';
+              const unitCost = parseFloat(cols[unitCostIdx]);
 
-              const product = products.find(p => p.id === pid);
-
-              if (product && !isNaN(qty) && qty > 0 && !isNaN(cost)) {
+              if (name && !isNaN(qty) && qty > 0 && !isNaN(unitCost)) {
+                  const existing = products.find(p => p.name.toLowerCase() === name.toLowerCase());
                   parsed.push({
-                      productId: pid,
-                      productName: product.name,
+                      productName: name,
+                      category: cols[catIdx] || (existing?.category || 'Uncategorized'),
+                      hoCost: parseFloat(cols[hoCostIdx]) || (existing?.hoCost || 0),
+                      minSalePrice: parseFloat(cols[minPriceIdx]) || (existing?.minSalePrice || 0),
+                      weight: parseFloat(cols[weightIdx]) || (existing?.weight || 0),
                       quantity: qty,
-                      unitCost: cost,
-                      notes: note
+                      unitCost: unitCost,
+                      notes: cols[notesIdx] || '',
+                      action: existing ? 'UPDATE' : 'NEW'
                   });
               } else {
                   skipped++;
@@ -121,7 +140,7 @@ const Inventory: React.FC = () => {
           }
 
           if (parsed.length === 0) {
-              setCsvError('No valid entries found. Ensure Product IDs match existing items.');
+              setCsvError('No valid entries found. Check file content.');
           } else {
               setCsvPreviewData(parsed);
               if (skipped > 0) setCsvError(`${skipped} invalid rows were skipped.`);
@@ -137,30 +156,64 @@ const Inventory: React.FC = () => {
       }
       
       setIsImporting(true);
+      log("Initiating bulk operation...");
       try {
-          const payload: OpeningStockPayload[] = csvPreviewData.map(item => ({
-              shopId: shopId!,
-              productId: item.productId,
-              locationId: bulkLocationId,
-              quantity: item.quantity,
-              unitCost: item.unitCost,
-              date: new Date(),
-              notes: item.notes || 'Bulk Inventory Migration'
+          // 1. Prepare product data for sync
+          const productsToSync = csvPreviewData.map(item => ({
+              name: item.productName,
+              category: item.category,
+              hoCost: item.hoCost,
+              minSalePrice: item.minSalePrice,
+              weight: item.weight,
           }));
 
-          await bulkAddOpeningStock(payload);
-          setImportSuccess(`Successfully initialized ${payload.length} stock lines in Ledger.`);
-          setCsvPreviewData([]);
+          // 2. Sync products and get the ID map
+          log(`Syncing ${productsToSync.length} products with central database...`);
+          const nameToIdMap = await bulkSyncProducts(productsToSync);
+          log(`Product sync complete. ${nameToIdMap.size} items processed.`);
+
+          // 3. Prepare opening stock payload using the new IDs
+          const stockPayload: OpeningStockPayload[] = csvPreviewData.map(item => {
+              const productId = nameToIdMap.get(item.productName.toLowerCase());
+              if (!productId) {
+                  const errMsg = `CRITICAL: Could not find Product ID for "${item.productName}" after sync. Aborting.`;
+                  log(errMsg);
+                  throw new Error(errMsg);
+              }
+              return {
+                  shopId: shopId!,
+                  productId: productId,
+                  locationId: bulkLocationId,
+                  quantity: item.quantity,
+                  unitCost: item.unitCost, // This is local currency from CSV
+                  date: new Date(),
+                  notes: item.notes || 'Bulk Inventory Sync'
+              };
+          });
+
+          // 4. Add opening stock
+          log(`Posting ${stockPayload.length} stock entries to the ledger...`);
+          await bulkAddOpeningStock(stockPayload);
+          log(`SUCCESS: Ledger updated.`);
+
+          setImportSuccess(`Successfully synced ${productsToSync.length} products and imported ${stockPayload.length} stock entries.`);
           setCsvFile(null);
-          setTimeout(() => setShowImportSection(false), 3000);
+          setCsvPreviewData([]);
+          setTimeout(() => {
+            setShowImportSection(false);
+            setImportSuccess('');
+            setOperationLog([]);
+          }, 4000);
       } catch (e: any) {
           setCsvError(`Import failed: ${e.message}`);
+          log(`FATAL ERROR: ${e.message}`);
       } finally {
           setIsImporting(false);
       }
   };
 
   const inventoryLevels = useMemo(() => {
+    // ... (existing logic, no changes needed here)
     const importMap: Record<string, { totalCost: number, totalQty: number }> = {};
     const shopImportMap: Record<string, { totalCost: number, totalQty: number }> = {};
     const activityMap: Record<string, { received: number, sold: number }> = {};
@@ -248,7 +301,7 @@ const Inventory: React.FC = () => {
             className={`flex items-center px-4 py-2 rounded-lg font-black text-xs uppercase tracking-widest transition-all shadow-md ${showImportSection ? 'bg-gray-100 text-gray-500' : 'bg-primary text-white hover:bg-primary-dark'}`}
           >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-              {showImportSection ? 'Close Utility' : 'Initialize Starting Stock'}
+              {showImportSection ? 'Close Utility' : 'Bulk Stock & Product Sync'}
           </button>
       </div>
 
@@ -257,82 +310,53 @@ const Inventory: React.FC = () => {
           <div className="bg-white p-6 rounded-xl shadow-xl border-2 border-primary/10 animate-fade-in-down">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div>
-                    <h3 className="text-lg font-black text-gray-900 mb-2 uppercase italic">Bulk Initialization Utility</h3>
-                    <p className="text-sm text-gray-500 mb-6">Record starting balances for products. This creates opening ledger entries (JVs) and updates inventory valuation immediately.</p>
+                    <h3 className="text-lg font-black text-gray-900 mb-2 uppercase italic">Bulk Sync Utility</h3>
+                    <p className="text-sm text-gray-500 mb-6">Create new products and record stock levels from a single CSV file. The system matches by name to update existing items or create new ones.</p>
                     
                     <div className="space-y-4">
-                        <div>
-                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Target Storage Location</label>
-                            <select 
-                                value={bulkLocationId} 
-                                onChange={e => setBulkLocationId(e.target.value)} 
-                                className="w-full border border-gray-300 rounded-lg p-3 bg-white font-bold text-gray-900 focus:ring-primary focus:border-primary"
-                            >
-                                <option value="">-- Choose Location --</option>
-                                {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-                            </select>
+                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                          <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">1. Set Target Location</label>
+                          <select value={bulkLocationId} onChange={e => setBulkLocationId(e.target.value)} className="w-full border border-gray-300 rounded-lg p-3 bg-white font-bold text-gray-900 focus:ring-primary focus:border-primary">
+                              <option value="">-- Choose where stock will be added --</option>
+                              {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                          </select>
                         </div>
 
-                        <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center bg-gray-50 hover:bg-gray-100/50 transition-colors">
-                            <input type="file" id="bulkStockCsv" accept=".csv" onChange={handleFileChange} className="hidden" />
-                            <label htmlFor="bulkStockCsv" className="cursor-pointer flex flex-col items-center group">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-primary mb-2 group-hover:scale-110 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                <span className="text-primary font-black text-sm uppercase tracking-widest">Upload Stock Manifest</span>
-                            </label>
-                            {csvFile && <p className="mt-2 text-xs font-bold text-gray-600 bg-white inline-block px-3 py-1 rounded-full border border-gray-100">File: {csvFile.name}</p>}
+                        <div className="p-4 bg-gray-50 rounded-xl border border-gray-100">
+                           <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">2. Upload Manifest</label>
+                           <input type="file" id="bulkStockCsv" accept=".csv" onChange={handleFileChange} className="hidden" />
+                           <label htmlFor="bulkStockCsv" className="cursor-pointer flex items-center justify-between p-4 rounded-xl bg-white border-2 border-dashed border-gray-200 hover:border-primary transition-colors group">
+                                <span className="text-sm font-bold text-gray-500 group-hover:text-primary">{csvFile ? `File: ${csvFile.name}` : 'Click to select CSV...'}</span>
+                                <span className="text-xs font-black bg-primary text-white px-3 py-1 rounded-lg">Upload</span>
+                           </label>
                         </div>
 
-                        <button 
-                            onClick={downloadTemplate}
-                            className="w-full flex items-center justify-center space-x-2 text-xs font-black text-blue-700 bg-blue-50 py-3 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all uppercase tracking-widest"
-                        >
+                        <button onClick={downloadTemplate} className="w-full flex items-center justify-center space-x-2 text-xs font-black text-blue-700 bg-blue-50 py-3 rounded-lg border border-blue-100 hover:bg-blue-100 transition-all uppercase tracking-widest">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            <span>Download Current ID Template</span>
+                            <span>Download CSV Template</span>
                         </button>
                     </div>
                   </div>
 
-                  <div className="bg-gray-50 rounded-xl p-5 border border-gray-100">
-                      {csvError && <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-lg text-xs font-bold border border-red-100">{csvError}</div>}
-                      {importSuccess && <div className="mb-4 p-3 bg-green-50 text-green-700 rounded-lg text-xs font-bold border border-green-100 animate-pulse">{importSuccess}</div>}
+                  <div className="bg-gray-900 rounded-xl p-5 border-4 border-gray-800 flex flex-col">
+                      <div className="flex justify-between items-center mb-3">
+                          <h4 className="text-xs font-black text-gray-400 uppercase tracking-[0.2em]">Live Console</h4>
+                           <div className={`w-3 h-3 rounded-full ${isImporting ? 'bg-yellow-400 animate-pulse' : 'bg-green-500'}`}></div>
+                      </div>
+                      <div className="h-40 bg-black/50 p-3 rounded-lg overflow-y-auto font-mono text-xs text-green-400 space-y-1 custom-scrollbar flex flex-col-reverse">
+                          <div ref={logEndRef}></div>
+                          {operationLog.length === 0 ? <p className="text-gray-600"># Waiting for instructions...</p> : operationLog.map((l, i) => <p key={i} className={l.includes('ERROR') || l.includes('FATAL') ? 'text-red-500' : ''}>{l}</p>)}
+                      </div>
                       
-                      {csvPreviewData.length > 0 ? (
-                          <div className="h-full flex flex-col">
-                              <div className="flex justify-between items-center mb-3">
-                                  <h4 className="text-xs font-black text-gray-500 uppercase tracking-widest">Parsing Result ({csvPreviewData.length} lines)</h4>
-                                  <button 
-                                    onClick={handleBulkImport} 
-                                    disabled={isImporting || !bulkLocationId}
-                                    className="bg-green-600 hover:bg-green-700 text-white font-black py-2 px-6 rounded-lg text-[10px] uppercase tracking-widest shadow-lg disabled:opacity-50"
-                                  >
-                                      {isImporting ? 'Syncing...' : 'Commit to Ledger'}
-                                  </button>
-                              </div>
-                              <div className="flex-1 overflow-y-auto max-h-[300px] border border-gray-200 rounded-lg bg-white shadow-inner">
-                                  <table className="min-w-full divide-y divide-gray-200 text-[11px]">
-                                      <thead className="bg-gray-50 sticky top-0">
-                                          <tr>
-                                              <th className="px-3 py-2 text-left font-black text-gray-400 uppercase">Item</th>
-                                              <th className="px-3 py-2 text-center font-black text-gray-400 uppercase">Qty</th>
-                                              <th className="px-3 py-2 text-right font-black text-gray-400 uppercase">Cost ({currentShopCurrency.symbol})</th>
-                                          </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-gray-100">
-                                          {csvPreviewData.map((item, idx) => (
-                                              <tr key={idx} className="hover:bg-gray-50">
-                                                  <td className="px-3 py-2 font-bold text-gray-900">{item.productName}</td>
-                                                  <td className="px-3 py-2 text-center font-black text-blue-600">{item.quantity}</td>
-                                                  <td className="px-3 py-2 text-right text-gray-500">{item.unitCost.toLocaleString()}</td>
-                                              </tr>
-                                          ))}
-                                      </tbody>
-                                  </table>
-                              </div>
-                          </div>
-                      ) : (
-                          <div className="h-full flex flex-col items-center justify-center text-center py-10 opacity-30">
-                              <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-                              <p className="text-sm font-black uppercase tracking-widest">Waiting for CSV manifest</p>
+                      {csvError && <div className="mt-2 p-2 bg-red-500/20 text-red-400 rounded text-xs border border-red-500 font-bold">{csvError}</div>}
+                      {importSuccess && <div className="mt-2 p-2 bg-green-500/20 text-green-400 rounded text-xs border border-green-500 font-bold">{importSuccess}</div>}
+                      
+                      {csvPreviewData.length > 0 && (
+                          <div className="mt-auto pt-4 space-y-2">
+                              <p className="text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">Preview: {csvPreviewData.length} records parsed</p>
+                              <button onClick={handleBulkImport} disabled={isImporting || !bulkLocationId} className="w-full bg-green-600 hover:bg-green-700 text-white font-black py-3 px-6 rounded-lg flex items-center justify-center disabled:opacity-50 text-xs uppercase tracking-widest shadow-lg">
+                                  {isImporting ? 'Processing...' : 'Commit to Ledger'}
+                              </button>
                           </div>
                       )}
                   </div>

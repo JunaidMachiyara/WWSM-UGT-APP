@@ -1,3 +1,4 @@
+
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { db } from '../firebase';
 import { 
@@ -103,7 +104,7 @@ interface AppContextType {
   bulkAddCustomers: (payload: BulkCustomerPayload[]) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   standardizeItemIds: () => Promise<void>;
-  bulkSyncProducts: (products: (Partial<Product> & { name: string })[]) => Promise<void>;
+  bulkSyncProducts: (products: (Partial<Product> & { name: string })[]) => Promise<Map<string, string>>;
   addShopAccount: (account: Omit<ShopAccount, 'id'>) => Promise<void>;
   updateShopAccount: (id: string, data: Partial<ShopAccount>) => Promise<void>;
   updateCurrency: (data: { id: string, rate: number }) => Promise<void>;
@@ -506,40 +507,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       window.location.reload();
   };
 
-  const bulkSyncProducts = async (productsData: (Partial<Product> & { name: string })[]) => {
+  const bulkSyncProducts = async (productsData: (Partial<Product> & { name: string })[]): Promise<Map<string, string>> => {
       const batch = writeBatch(db);
-      
-      // Determine starting sequence for new items
+      const nameToIdMap = new Map<string, string>();
+
       const itemsWithId = products.filter(p => p.id.startsWith('ITEM-'));
       let currentMax = itemsWithId.length > 0 ? Math.max(...itemsWithId.map(p => {
           const suffix = p.id.split('-')[1];
           return parseInt(suffix) || 0;
       })) : 1000;
 
-      productsData.forEach(p => {
+      for (const p of productsData) {
           let targetDoc;
           let idToUse = p.id;
-          
+          const lowercaseName = p.name.toLowerCase();
+
           if (idToUse) {
               targetDoc = doc(db, 'products', idToUse);
+              nameToIdMap.set(lowercaseName, idToUse);
           } else {
-              const existing = products.find(prod => prod.name.toLowerCase() === p.name.toLowerCase());
+              const existing = products.find(prod => prod.name.toLowerCase() === lowercaseName);
               if (existing) {
-                  targetDoc = doc(db, 'products', existing.id);
+                  idToUse = existing.id;
+                  targetDoc = doc(db, 'products', idToUse);
+                  nameToIdMap.set(lowercaseName, idToUse);
               } else {
                   currentMax++;
                   idToUse = `ITEM-${currentMax}`;
                   targetDoc = doc(db, 'products', idToUse);
+                  nameToIdMap.set(lowercaseName, idToUse);
               }
           }
 
-          const cleanProduct = { ...p };
-          delete cleanProduct.id; 
-          
+          const { id, ...cleanProduct } = p;
           batch.set(targetDoc, cleanProduct, { merge: true });
-      });
+      }
       
       await batch.commit();
+      return nameToIdMap;
   };
 
   const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { 
@@ -754,7 +759,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       batch.set(inRef, {
           shopId: payload.shopId, productId: payload.productId, type: TransactionType.STOCK_TRANSFER_IN,
           description: `Transfer from ${warehouses.find(w => w.id === payload.fromLocationId)?.name || 'Other Location'}`,
-// FIX: Corrected a typo from `font` to `amount` to match the Transaction interface.
           quantity: Number(payload.quantity) || 0, amount: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
       });
       await batch.commit();

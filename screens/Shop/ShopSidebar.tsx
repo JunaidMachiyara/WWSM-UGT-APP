@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { ShopView } from './ShopDashboard';
 import { useAppContext } from '../../context/AppContext';
@@ -15,17 +14,12 @@ interface ShopSidebarProps {
 }
 
 const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
-  const { shops, shopId, logout, currentUser, switchShop, role } = useAppContext();
+  const { shops, shopId } = useAppContext();
   const currentShop = shops.find(s => s.id === shopId);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   
-  // Dropdown States
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const navRef = useRef<HTMLDivElement>(null);
-
-  const isManager = role === UserRole.MANAGER;
-  const isHO = role === UserRole.HEAD_OFFICE;
-  const multiShopAccess = (currentUser?.allowedShopIds?.length || 0) > 1;
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -134,12 +128,11 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
       <div className="max-w-[1920px] mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           
-          {/* Left Side: Logo & Main Nav */}
+          {/* Left Side: Shop Name & Main Nav */}
           <div className="flex items-center">
             <div className="flex-shrink-0 flex items-center mr-6">
-              <span className="text-xl font-extrabold text-primary tracking-tight">WWSM_UGT</span>
-              <div className="ml-3 flex flex-col justify-center border-l border-blue-200 pl-3">
-                  <span className="text-xs font-bold text-gray-800 uppercase tracking-wide leading-none">{currentShop?.name}</span>
+              <div className="flex flex-col justify-center">
+                  <span className="text-sm font-black text-gray-800 uppercase tracking-wide leading-none">{currentShop?.name}</span>
                   <span className="text-[10px] text-gray-500 leading-none mt-0.5">{currentShop?.country}</span>
               </div>
             </div>
@@ -176,9 +169,8 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
             </div>
           </div>
 
-          {/* Right Side: Home, User & Logout */}
+          {/* Right Side: Home Button */}
           <div className="hidden lg:flex items-center space-x-4">
-              {/* Home Button */}
               <button 
                   onClick={() => handleNavClick('dashboard')}
                   title="Go to Shop Dashboard"
@@ -191,35 +183,10 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
                   <HomeIcon />
                   Shop Home
               </button>
-
-              <div className="h-8 w-px bg-blue-200"></div>
-
-              {(isManager || (isHO && multiShopAccess)) && (
-                  <button 
-                    onClick={() => switchShop(null)}
-                    className="flex items-center text-xs font-bold text-blue-700 bg-blue-100 px-3 py-2 rounded-lg border border-blue-200 hover:bg-blue-200 transition-all shadow-sm"
-                  >
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
-                      </svg>
-                      {isManager ? 'MANAGER PORTAL' : 'SWITCH SHOP'}
-                  </button>
-              )}
-
-              <div className="text-right">
-                  <p className="text-sm font-bold text-gray-900">{currentUser?.name}</p>
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest">{isHO ? 'Administrator' : isManager ? 'Manager' : 'Operator'}</p>
-              </div>
-              <button
-                onClick={logout}
-                className="bg-white hover:bg-red-50 text-gray-600 hover:text-red-600 px-4 py-2 rounded-md text-sm font-medium transition-colors border border-gray-200 hover:border-red-200 shadow-sm"
-              >
-                Logout
-              </button>
           </div>
 
           {/* Mobile Menu Button */}
-          <div className="flex items-center lg:hidden">
+          <div className="flex items-center lg:hidden w-full justify-end">
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="inline-flex items-center justify-center p-2 rounded-md text-gray-500 hover:text-primary hover:bg-blue-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary"
@@ -230,7 +197,7 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
         </div>
       </div>
 
-      {/* Mobile Menu (Drawer) - Keep white for contrast */}
+      {/* Mobile Menu (Drawer) */}
       {mobileMenuOpen && (
         <div className="lg:hidden border-t border-gray-200 bg-white absolute w-full z-50 shadow-lg">
           <div className="pt-2 pb-3 space-y-1 px-2">
@@ -242,18 +209,6 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
                 Shop Dashboard
             </button>
             
-            {(isManager || (isHO && multiShopAccess)) && (
-                <button 
-                    onClick={() => switchShop(null)}
-                    className="flex items-center w-full text-left px-3 py-3 text-blue-700 font-bold bg-blue-50"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM14 11a1 1 0 011 1v1h1a1 1 0 110 2h-1v1a1 1 0 11-2 0v-1h-1a1 1 0 110-2h1v-1a1 1 0 011-1z" />
-                    </svg>
-                    {isManager ? 'GO TO MANAGER PORTAL' : 'SWITCH LOCATION'}
-                </button>
-            )}
-
             <div className="h-px bg-gray-100 my-2"></div>
             <button onClick={() => handleNavClick('receiveStock')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Receive Stock</button>
             <button onClick={() => handleNavClick('sales')} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-50">Sales</button>
@@ -278,20 +233,6 @@ const ShopSidebar: React.FC<ShopSidebarProps> = ({ activeView, setView }) => {
                 {setupItems.map(i => (
                     <button key={i.id} onClick={() => handleNavClick(i.id as ShopView)} className="block w-full text-left px-3 py-2 rounded-md text-sm text-gray-600 hover:bg-gray-50 pl-6">{i.label}</button>
                 ))}
-            </div>
-          </div>
-          <div className="pt-4 pb-4 border-t border-gray-200 px-4 bg-gray-50">
-            <div className="flex items-center">
-              <div className="ml-3">
-                <div className="text-base font-medium text-gray-800">{currentUser?.name}</div>
-                <div className="text-sm font-medium text-gray-500">{role}</div>
-              </div>
-              <button
-                onClick={logout}
-                className="ml-auto bg-white border border-gray-300 text-gray-700 px-3 py-1 rounded-md text-sm font-medium shadow-sm"
-              >
-                Logout
-              </button>
             </div>
           </div>
         </div>

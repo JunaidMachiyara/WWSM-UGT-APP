@@ -94,6 +94,10 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
   const currentShopAccounts = shopAccounts.filter(acc => acc.shopId === shopId);
 
+  const sortedProducts = useMemo(() => {
+    return [...products].sort((a, b) => a.name.localeCompare(b.name));
+  }, [products]);
+
   const customerAdvanceBalance = useMemo(() => {
     if(!customerId) return 0;
     return getAdvanceBalance(customerId);
@@ -479,7 +483,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                       </button>
                   </div>
                   <SearchableSelect 
-                    options={products} 
+                    options={sortedProducts} 
                     value={item.productId} 
                     onChange={(val) => handleItemChange(index, 'productId', val)} 
                     placeholder="Search product..." 

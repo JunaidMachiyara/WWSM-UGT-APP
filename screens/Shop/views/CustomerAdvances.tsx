@@ -4,7 +4,7 @@ import { useAppContext } from '../../../context/AppContext';
 import { AdvanceItem, ShipmentStatus, Transaction, TransactionType } from '../../../types';
 
 const CustomerAdvances: React.FC = () => {
-    const { shopId, customers, products, recordAdvance, shopAccounts, getAdvanceBalance, formatCurrency, currentShopCurrency, shipments, transactions } = useAppContext();
+    const { shopId, customers, products, recordAdvance, shopAccounts, getAdvanceBalance, formatCurrency, currentShopCurrency, shipments, transactions, addCustomer } = useAppContext();
     const [customerId, setCustomerId] = useState('');
     const [amount, setAmount] = useState(0);
     const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
@@ -13,8 +13,17 @@ const CustomerAdvances: React.FC = () => {
     const [successMessage, setSuccessMessage] = useState('');
     const [viewingAdvance, setViewingAdvance] = useState<Transaction | null>(null);
     
+    // Quick Add Customer State
+    const [showAddCustomerModal, setShowAddCustomerModal] = useState(false);
+    const [newCustomerName, setNewCustomerName] = useState('');
+    const [newCustomerPhone, setNewCustomerPhone] = useState('');
+
     const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
     const currentShopAccounts = useMemo(() => shopAccounts.filter(acc => acc.shopId === shopId), [shopAccounts, shopId]);
+
+    const sortedProducts = useMemo(() => {
+      return [...products].sort((a, b) => a.name.localeCompare(b.name));
+    }, [products]);
 
     const customersWithAdvance = useMemo(() => {
         return shopCustomers.map(customer => {
@@ -109,6 +118,28 @@ const CustomerAdvances: React.FC = () => {
         setTimeout(() => setSuccessMessage(''), 5000);
     };
 
+    const handleQuickAddCustomer = async () => {
+      if (!newCustomerName.trim()) {
+          alert('Customer name is required.');
+          return;
+      }
+      if (!shopId) return;
+      try {
+          await addCustomer({
+              name: newCustomerName,
+              phone: newCustomerPhone,
+              shopId,
+              reference: 'Quick Add'
+          });
+          setNewCustomerName('');
+          setNewCustomerPhone('');
+          setShowAddCustomerModal(false);
+      } catch (error) {
+          console.error(error);
+          alert('Failed to add customer.');
+      }
+    };
+
     return (
         <div className="space-y-8">
              {successMessage && (
@@ -121,7 +152,16 @@ const CustomerAdvances: React.FC = () => {
                     <h3 className="text-xl font-semibold mb-4 text-gray-800">Record Customer Advance</h3>
                      <form onSubmit={handleSubmit} className="space-y-4">
                         <div>
-                            <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
+                            <div className="flex justify-between items-center mb-1">
+                                <label htmlFor="customer" className="block text-sm font-medium text-gray-700">Customer</label>
+                                <button 
+                                    type="button" 
+                                    onClick={() => setShowAddCustomerModal(true)} 
+                                    className="text-xs text-primary hover:text-blue-800 font-bold hover:underline focus:outline-none"
+                                >
+                                    + New Customer
+                                </button>
+                            </div>
                             <select id="customer" value={customerId} onChange={e => setCustomerId(e.target.value)} className="mt-1 w-full border border-gray-300 rounded-md shadow-sm p-2 bg-white text-gray-900 focus:outline-none focus:ring-primary" required>
                                 <option value="">Select customer</option>
                                 {shopCustomers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -154,7 +194,7 @@ const CustomerAdvances: React.FC = () => {
                                             <label className="block text-xs font-medium text-gray-700">Product</label>
                                             <select value={item.productId} onChange={e => handleItemChange(index, 'productId', e.target.value)} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm bg-white text-gray-900 focus:outline-none focus:ring-primary">
                                                 <option value="">Select product</option>
-                                                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                {sortedProducts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                             </select>
                                         </div>
                                         <div className="col-span-2">
@@ -286,6 +326,54 @@ const CustomerAdvances: React.FC = () => {
                         </div>
                         <div className="p-4 bg-gray-50 border-t border-gray-200 flex justify-end">
                             <button onClick={() => setViewingAdvance(null)} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {showAddCustomerModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 animate-fade-in">
+                    <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md transform transition-all animate-scale-up">
+                        <div className="flex justify-between items-center mb-4 border-b pb-2">
+                            <h3 className="text-lg font-bold text-gray-800">Create New Customer</h3>
+                            <button onClick={() => setShowAddCustomerModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                        </div>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Full Name</label>
+                                <input 
+                                    type="text" 
+                                    value={newCustomerName} 
+                                    onChange={e => setNewCustomerName(e.target.value)} 
+                                    className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
+                                    autoFocus 
+                                    placeholder="Enter customer name"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700">Phone Number (Optional)</label>
+                                <input 
+                                    type="text" 
+                                    value={newCustomerPhone} 
+                                    onChange={e => setNewCustomerPhone(e.target.value)} 
+                                    className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                                    placeholder="Enter phone number"
+                                />
+                            </div>
+                            <div className="flex justify-end space-x-3 mt-6">
+                                <button 
+                                    onClick={() => setShowAddCustomerModal(false)} 
+                                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
+                                >
+                                    Cancel
+                                </button>
+                                <button 
+                                    onClick={handleQuickAddCustomer} 
+                                    className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
+                                >
+                                    Save Customer
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

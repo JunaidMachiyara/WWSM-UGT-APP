@@ -1,215 +1,225 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-import { TransactionType, ShipmentStatus, AlertType } from '../../../types';
-import DashboardCard from '../../../components/DashboardCard';
+import { Shop, TransactionType } from '../../../types';
 import ShopPerformanceChart from '../../../components/charts/ShopPerformanceChart';
 import SalesTrendChart from '../../../components/charts/SalesTrendChart';
-import CategoryDistributionChart from '../../../components/charts/CategoryDistributionChart';
-import TopProductsChart from '../../../components/charts/TopProductsChart';
 
-// Icons
-const RevenueIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v.01" /></svg>;
-const InventoryIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>;
-const ProfitIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>;
-const ExpenseIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-const LogisticsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>;
-const WarningIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>;
-
-type ModalType = 'STOCK' | 'REVENUE' | 'EXPENSE' | 'PROFIT' | 'SHIPMENTS' | 'ALERTS' | 'PRICE_VIOLATIONS';
-
-interface DetailModalState {
-    isOpen: boolean;
-    type: ModalType;
-    shopId: string;
-    shopName: string;
+interface ShopStats {
+    id: string;
+    name: string;
+    location: string;
+    cashInHand: number;
+    inventoryUnits: number;
+    inventoryWorth: number;
+    receivables: number;
+    payables: number;
+    monthExpenses: number;
+    sales7d: number;
+    receipts7d: number;
+    expenses7d: number;
+    currencySymbol: string;
+    currencyRate: number;
 }
 
+interface ShopSummaryCardProps {
+  stats: ShopStats;
+  onClick: () => void;
+}
+
+const ShopSummaryCard: React.FC<ShopSummaryCardProps> = ({ stats, onClick }) => {
+    const { formatCurrency } = useAppContext(); // Base currency (USD) formatter for HO Payables
+
+    const formatLocalCurrency = (amountInBase: number) => {
+        const amount = amountInBase * (stats.currencyRate || 1);
+        return `${stats.currencySymbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    };
+
+    const StatItem = ({ label, value, className = '' }: { label: string, value: string, className?: string }) => (
+        <div className="flex justify-between items-baseline py-2 border-b border-gray-100 last:border-0">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{label}</span>
+            <span className={`text-sm font-black ${className}`}>{value}</span>
+        </div>
+    );
+
+    return (
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 flex flex-col hover:shadow-xl hover:border-primary/20 transition-all duration-300 transform hover:-translate-y-1">
+            <div className="p-4 border-b-2 border-gray-100">
+                <h3 className="text-lg font-black text-primary uppercase tracking-tighter italic">{stats.name}</h3>
+                <p className="text-xs font-medium text-gray-400">{stats.location}</p>
+            </div>
+            <div className="p-4 space-y-1 flex-1">
+                <StatItem label="Cash in Hand" value={formatLocalCurrency(stats.cashInHand)} className="text-green-600" />
+                <StatItem label="Inventory (Units)" value={stats.inventoryUnits.toLocaleString()} className="text-gray-900" />
+                <StatItem label="Inventory Worth" value={formatLocalCurrency(stats.inventoryWorth)} className="text-gray-900" />
+                <StatItem label="Receivables" value={formatLocalCurrency(stats.receivables)} className="text-orange-600" />
+                <StatItem label="Payables (to HO)" value={formatCurrency(stats.payables)} className="text-red-600" />
+                <StatItem label="Expenses (Month)" value={formatLocalCurrency(stats.monthExpenses)} className="text-red-500" />
+                <div className="pt-2">
+                    <p className="text-center text-[9px] font-bold text-gray-300 uppercase tracking-widest">Last 7 Days</p>
+                </div>
+                <StatItem label="Sales" value={formatLocalCurrency(stats.sales7d)} className="text-blue-600" />
+                <StatItem label="Receipts" value={formatLocalCurrency(stats.receipts7d)} className="text-green-500" />
+                <StatItem label="Expenses" value={formatLocalCurrency(stats.expenses7d)} className="text-red-500" />
+            </div>
+            <div className="p-3 bg-gray-50/70 rounded-b-2xl mt-auto">
+                <button
+                    onClick={onClick}
+                    className="w-full bg-primary/10 text-primary hover:bg-primary hover:text-white font-black py-2 rounded-lg transition-all text-xs uppercase tracking-widest"
+                >
+                    Manage Shop
+                </button>
+            </div>
+        </div>
+    );
+};
+
+
 const Dashboard: React.FC = () => {
-  const { transactions, shops, products, shipments, alerts, warehouses } = useAppContext();
-  const [modalState, setModalState] = useState<DetailModalState | null>(null);
+  const { shops, transactions, products, shopAccounts, switchShop, currencies } = useAppContext();
 
-  // Helper for compact formatting (e.g. 1.5K, 2M)
-  const formatCompact = (num: number) => {
-    return '$' + new Intl.NumberFormat('en-US', {
-        notation: "compact",
-        maximumFractionDigits: 1
-    }).format(num);
-  };
+  const shopStats = useMemo(() => {
+    const activeShops = shops.filter(s => s.isActive);
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const currentMonthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 
-  // --- KPI Calculations ---
-  const totalSales = useMemo(() => 
-    transactions
-      .filter(t => t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE)
-      .reduce((sum, t) => sum + t.amount * (t.quantity || 1), 0),
-    [transactions]
-  );
+    return activeShops.map(shop => {
+        const shopTrans = transactions.filter(t => t.shopId === shop.id);
+        const shopAccs = shopAccounts.filter(a => a.shopId === shop.id);
+        const currency = currencies.find(c => c.id === shop.currencyCode) || { id: 'USD', name: 'US Dollar', symbol: '$', rate: 1 };
 
-  const totalExpenses = useMemo(() => 
-    transactions
-      .filter(t => t.type === TransactionType.EXPENSE)
-      .reduce((sum, t) => sum + t.amount, 0),
-    [transactions]
-  );
+        // Cash in Hand
+        let cashInHand = shopAccs.reduce((sum, acc) => sum + acc.openingBalance, 0);
+        shopTrans.forEach(t => {
+            if (t.paymentAccountId) {
+                if (t.type === TransactionType.SALES_RECEIPT || t.type === TransactionType.CUSTOMER_ADVANCE) {
+                    cashInHand += t.amount;
+                } else if (t.type === TransactionType.EXPENSE) {
+                    cashInHand -= t.amount;
+                }
+            }
+        });
 
-  const costOfGoodsSold = useMemo(() => {
-    const sales = transactions.filter(t => t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE);
-    return sales.reduce((sum, t) => {
-        const product = products.find(p => p.id === t.productId);
-        return sum + (product ? product.hoCost * (t.quantity || 1) : 0);
-    }, 0);
-  }, [transactions, products]);
+        // Inventory
+        const inventoryMap: Record<string, number> = {};
+        shopTrans.forEach(t => {
+            if (t.productId) {
+                const qty = t.quantity || 0;
+                inventoryMap[t.productId] = inventoryMap[t.productId] || 0;
+                if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
+                    inventoryMap[t.productId] += qty;
+                } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
+                    inventoryMap[t.productId] -= qty;
+                }
+            }
+        });
+        let inventoryUnits = 0;
+        let inventoryWorth = 0;
+        Object.entries(inventoryMap).forEach(([productId, quantity]) => {
+            if (quantity > 0) {
+                inventoryUnits += quantity;
+                const product = products.find(p => p.id === productId);
+                if (product) {
+                    inventoryWorth += quantity * product.hoCost;
+                }
+            }
+        });
 
-  const grossProfit = totalSales - costOfGoodsSold;
-  const netProfit = grossProfit - totalExpenses;
-  const profitMargin = totalSales > 0 ? ((netProfit / totalSales) * 100).toFixed(1) : '0.0';
+        // Receivables
+        let receivables = 0;
+        shopTrans.forEach(t => {
+            if (t.invoiceId === 'OPENING-BAL' && t.type === TransactionType.CREDIT_SALE) {
+                receivables += t.amount;
+            } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE) {
+                receivables += t.amount * (t.quantity || 1);
+            } else if (t.type === TransactionType.SALES_RECEIPT || t.type === TransactionType.ADVANCE_USAGE) {
+                receivables -= t.amount;
+            } else if (t.type === TransactionType.SALES_RETURN) {
+                receivables -= t.amount * (t.quantity || 1);
+            }
+        });
 
-  const inventoryValuation = useMemo(() => {
-      let totalCostValue = 0;
-      const stockMap: Record<string, number> = {}; 
-      transactions.forEach(t => {
-          if (t.productId && t.quantity) {
-              if (!stockMap[t.productId]) stockMap[t.productId] = 0;
-              if (t.type === TransactionType.IMPORT || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.OPENING_STOCK) {
-                  stockMap[t.productId] += t.quantity;
-              }
-              if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
-                  stockMap[t.productId] -= t.quantity;
-              }
-          }
-      });
-      Object.entries(stockMap).forEach(([pid, qty]) => {
-          const p = products.find(prod => prod.id === pid);
-          if (qty > 0 && p) totalCostValue += qty * p.hoCost;
-      });
-      return totalCostValue;
-  }, [transactions, products]);
+        // Payables (to HO)
+        let payables = 0;
+        shopTrans.forEach(t => {
+            if (t.invoiceId === 'HO-OPENING-BAL') {
+                payables += t.amount;
+            } else if (t.type === TransactionType.IMPORT) {
+                payables += t.amount * (t.quantity || 1);
+            } else if ((t as any).expenseCategory === 'HEAD_OFFICE' && t.type === TransactionType.EXPENSE) {
+                payables -= t.amount;
+            }
+        });
+        
+        // Period-based metrics
+        let monthExpenses = 0;
+        let sales7d = 0;
+        let receipts7d = 0;
+        let expenses7d = 0;
 
-  // Alert Counts
-  const pendingShipmentsCount = shipments.filter(s => s.status === ShipmentStatus.PENDING).length;
-  const activeStockAlerts = alerts.filter(a => a.type === AlertType.STOCK_DISCREPANCY && !a.isRead).length;
-  const activePriceViolations = alerts.filter(a => a.type === AlertType.PRICE_VIOLATION && !a.isRead).length;
+        shopTrans.forEach(t => {
+            const tDate = new Date(t.date);
+            if (t.type === TransactionType.EXPENSE) {
+                if (tDate >= currentMonthStart) {
+                    monthExpenses += t.amount;
+                }
+                if (tDate >= sevenDaysAgo) {
+                    expenses7d += t.amount;
+                }
+            } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE) {
+                if (tDate >= sevenDaysAgo) {
+                    sales7d += t.amount * (t.quantity || 1);
+                }
+            } else if (t.type === TransactionType.SALES_RECEIPT) {
+                if (tDate >= sevenDaysAgo) {
+                    receipts7d += t.amount;
+                }
+            }
+        });
 
-  const getModalContent = () => {
-      if (!modalState) return null;
-      const { type } = modalState;
-
-      if (type === 'PRICE_VIOLATIONS') {
-        const violations = alerts.filter(a => a.type === AlertType.PRICE_VIOLATION && !a.isRead).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-        return (
-            <div className="overflow-x-auto">
-                 <table className="min-w-full divide-y divide-gray-200">
-                     <thead className="bg-gray-50">
-                         <tr>
-                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                             <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Violation Message</th>
-                             <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Inv #</th>
-                         </tr>
-                     </thead>
-                     <tbody className="bg-white divide-y divide-gray-200">
-                         {violations.map((a) => (
-                             <tr key={a.id}>
-                                 <td className="px-4 py-2 text-sm text-gray-500 whitespace-nowrap">{new Date(a.date).toLocaleDateString()}</td>
-                                 <td className="px-4 py-2 text-sm text-red-600 font-bold">{a.message}</td>
-                                 <td className="px-4 py-2 text-sm text-right text-gray-900 font-mono">{a.context?.invoiceId || '-'}</td>
-                             </tr>
-                         ))}
-                         {violations.length === 0 && <tr><td colSpan={3} className="text-center py-4 text-gray-500">No active violations.</td></tr>}
-                     </tbody>
-                 </table>
-             </div>
-        );
-      }
-      
-      // ... (Other modal content remains same as previous state)
-      return <p className="text-gray-500 italic">Details viewing available in "Notifications & Alerts" page.</p>;
-  };
+        return {
+            id: shop.id,
+            name: shop.name,
+            location: `${shop.district}, ${shop.country}`,
+            cashInHand,
+            inventoryUnits,
+            inventoryWorth,
+            receivables: Math.max(0, receivables),
+            payables: Math.max(0, payables),
+            monthExpenses,
+            sales7d,
+            receipts7d,
+            expenses7d,
+            currencySymbol: currency.symbol,
+            currencyRate: currency.rate,
+        };
+    }).sort((a,b) => a.name.localeCompare(b.name));
+  }, [shops, transactions, products, shopAccounts, currencies]);
 
   return (
-    <div className="space-y-8 relative">
-      {/* KPI Section */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <DashboardCard title="Total Revenue" value={formatCompact(totalSales)} icon={<RevenueIcon />} color="bg-blue-600" />
-        <DashboardCard title="Net Profit" value={formatCompact(netProfit)} icon={<ProfitIcon />} color={netProfit >= 0 ? "bg-green-600" : "bg-red-600"} />
-        <DashboardCard title="Total Expenses" value={formatCompact(totalExpenses)} icon={<ExpenseIcon />} color="bg-red-500" />
-        <div className="bg-white rounded-lg shadow-lg p-6 flex items-center justify-between">
-            <div>
-                <p className="text-sm text-gray-500 font-medium">Profit Margin</p>
-                <p className={`text-2xl font-bold ${Number(profitMargin) > 20 ? 'text-green-600' : 'text-yellow-600'}`}>{profitMargin}%</p>
-            </div>
-            <div className="h-12 w-12 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold">%</div>
+    <div className="space-y-8">
+        {/* Section 1: Shop Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {shopStats.map(stats => (
+                <ShopSummaryCard key={stats.id} stats={stats} onClick={() => switchShop(stats.id)} />
+            ))}
+            {shopStats.length === 0 && (
+                <div className="col-span-full text-center py-20 text-gray-400">
+                    <p className="text-lg font-medium">No active shops found.</p>
+                    <p className="text-sm">Add a shop in the 'Setup' section to get started.</p>
+                </div>
+            )}
         </div>
-      </div>
 
-      {/* Critical Alerts Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         {/* PRICE VIOLATION CARD - IMMEDIATE VISIBILITY */}
-         <div className={`rounded-lg shadow-lg p-6 border-l-8 transition-all transform hover:scale-105 ${activePriceViolations > 0 ? 'bg-red-50 border-red-600 animate-pulse' : 'bg-white border-gray-200'}`}>
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className={`text-sm font-bold uppercase tracking-wider ${activePriceViolations > 0 ? 'text-red-700' : 'text-gray-500'}`}>Price Violations</p>
-                    <p className={`text-4xl font-black ${activePriceViolations > 0 ? 'text-red-600' : 'text-gray-300'}`}>{activePriceViolations}</p>
-                </div>
-                <div className={`p-4 rounded-full ${activePriceViolations > 0 ? 'bg-red-600 shadow-lg' : 'bg-gray-100'}`}>
-                    <RevenueIcon />
-                </div>
-            </div>
-            <button 
-                disabled={activePriceViolations === 0}
-                onClick={() => setModalState({ isOpen: true, type: 'PRICE_VIOLATIONS', shopId: '', shopName: 'Active Price Violations' })}
-                className={`mt-4 text-sm font-bold flex items-center ${activePriceViolations > 0 ? 'text-red-600 hover:text-red-800' : 'text-gray-400 cursor-not-allowed'}`}
-            >
-                {activePriceViolations > 0 ? 'REVIEW VIOLATIONS NOW →' : 'No violations detected'}
-            </button>
-         </div>
-
-         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-orange-500">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm text-gray-500 font-medium">Pending Logistics</p>
-                    <p className="text-2xl font-bold text-gray-800">{pendingShipmentsCount}</p>
-                </div>
-                <div className="bg-orange-100 p-3 rounded-full text-orange-600"><LogisticsIcon /></div>
-            </div>
-         </div>
-
-         <div className="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
-            <div className="flex items-center justify-between">
-                <div>
-                    <p className="text-sm text-gray-500 font-medium">Stock Alerts</p>
-                    <p className="text-2xl font-bold text-gray-800">{activeStockAlerts}</p>
-                </div>
-                <div className="bg-blue-100 p-3 rounded-full text-blue-600"><WarningIcon /></div>
-            </div>
-         </div>
-      </div>
-
-      {/* Analytics */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SalesTrendChart transactions={transactions} />
-        <ShopPerformanceChart transactions={transactions} shops={shops} />
-      </div>
-
-      {/* Details Modal */}
-      {modalState && modalState.isOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-              <div className="bg-white rounded-lg shadow-2xl w-full max-w-4xl max-h-[80vh] flex flex-col">
-                  <div className="p-6 border-b border-red-200 flex justify-between items-center sticky top-0 bg-white rounded-t-lg z-10">
-                      <div>
-                          <h3 className="text-xl font-bold text-red-600">{modalState.shopName}</h3>
-                          <p className="text-sm text-gray-500 font-medium">Managers must review these occurrences to prevent revenue leakage.</p>
-                      </div>
-                      <button onClick={() => setModalState(null)} className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none">&times;</button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-6">
-                      {getModalContent()}
-                  </div>
-                  <div className="p-4 border-t border-gray-200 flex justify-end bg-gray-50 rounded-b-lg">
-                      <button onClick={() => setModalState(null)} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded text-gray-800 font-bold">Dismiss</button>
-                  </div>
-              </div>
-          </div>
-      )}
+        {/* Section 2: Restored Charts */}
+        <div className="mt-8 pt-8 border-t-4 border-dashed border-gray-200">
+             <h2 className="text-2xl font-black text-gray-800 tracking-tighter mb-6">Regional Performance Analytics</h2>
+             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <ShopPerformanceChart shops={shops} transactions={transactions} />
+                <SalesTrendChart transactions={transactions} />
+             </div>
+        </div>
     </div>
   );
 };
