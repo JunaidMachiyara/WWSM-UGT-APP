@@ -1,4 +1,4 @@
-// FIX: Import 'useMemo' from React to fix 'Cannot find name' errors.
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { UserRole } from '../types';

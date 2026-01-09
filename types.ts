@@ -25,6 +25,8 @@ export enum TransactionType {
   CUSTOMER_ADVANCE = 'CUSTOMER_ADVANCE',
   ADVANCE_USAGE = 'ADVANCE_USAGE',
   OPENING_STOCK = 'OPENING_STOCK',
+  // Added STOCK_WRITE_OFF to support inventory adjustments
+  STOCK_WRITE_OFF = 'STOCK_WRITE_OFF',
 }
 
 export enum ShipmentStatus {
@@ -164,6 +166,15 @@ export interface Transaction {
   date: Date;
   locationId?: string;
   advanceForItems?: AdvanceItem[]; // For CUSTOMER_ADVANCE type
+  importBatchId?: string; // To group bulk opening stock imports
+}
+
+// Added SaleItem to represent a subset of Transaction used in sale creation payloads
+export interface SaleItem {
+    productId: string;
+    quantity: number;
+    salePrice: number;
+    locationId: string;
 }
 
 export enum AssetStatus {
@@ -182,6 +193,14 @@ export interface Asset {
   paymentAccountId: string; // Account used for purchase
   expenseAccountId: string; // Expense category
   status: AssetStatus;
+}
+
+export interface ImportBatch {
+  id: string;
+  shopId: string;
+  date: Date;
+  itemCount: number;
+  syncedProducts: number;
 }
 
 

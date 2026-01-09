@@ -16,8 +16,6 @@ import {
   orderBy,
   Timestamp,
   serverTimestamp,
-  DocumentData,
-  QueryDocumentSnapshot
 } from 'firebase/firestore';
 import { 
   User, 
@@ -40,16 +38,10 @@ import {
   ExpenseAccount, 
   Asset, 
   AssetStatus,
-  ReceivedExtraItem,
-  InvoiceSummary
+  InvoiceSummary,
+  ImportBatch,
+  AccountType
 } from '../types';
-
-export interface SaleItem {
-    productId: string;
-    quantity: number;
-    salePrice: number;
-    locationId?: string;
-}
 
 export interface OpeningStockPayload {
     shopId: string;
@@ -65,7 +57,7 @@ export interface BulkCustomerPayload {
     name: string;
     phone: string;
     reference: string;
-    openingBalance: number; // in local currency
+    openingBalance: number; 
 }
 
 interface AppContextType {
@@ -86,6 +78,7 @@ interface AppContextType {
   customExpenseTypes: CustomExpenseType[];
   expenseAccounts: ExpenseAccount[];
   assets: Asset[];
+  importBatches: ImportBatch[];
   currentShopCurrency: Currency;
   isDemoMode: boolean;
   connectionError: string | null;
@@ -104,7 +97,7 @@ interface AppContextType {
   bulkAddCustomers: (payload: BulkCustomerPayload[]) => Promise<void>;
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   standardizeItemIds: () => Promise<void>;
-  bulkSyncProducts: (products: (Partial<Product> & { name: string })[]) => Promise<Map<string, string>>;
+  bulkSyncProducts: (products: any[]) => Promise<Map<string, string>>;
   addShopAccount: (account: Omit<ShopAccount, 'id'>) => Promise<void>;
   updateShopAccount: (id: string, data: Partial<ShopAccount>) => Promise<void>;
   updateCurrency: (data: { id: string, rate: number }) => Promise<void>;
@@ -124,7 +117,11 @@ interface AppContextType {
   recordPaymentVoucher: (payload: any) => Promise<void>;
   recordSalesReturn: (payload: any) => Promise<void>;
   addOpeningStock: (payload: OpeningStockPayload) => Promise<void>;
-  bulkAddOpeningStock: (payload: OpeningStockPayload[]) => Promise<void>;
+  bulkAddOpeningStock: (payload: OpeningStockPayload[], syncedProductsCount: number) => Promise<void>;
+  deleteImportBatch: (batchId: string) => Promise<void>;
+  purgeOpeningStock: (shopId: string) => Promise<void>;
+  deleteStockTransactions: (itemsToDelete: { productId: string, locationId: string }[]) => Promise<void>;
+  writeOffStock: (payload: { productId: string; locationId: string; quantity: number; notes: string; }) => Promise<void>;
   markAlertAsRead: (id: string) => Promise<void>;
   logAlert: (alert: Omit<Alert, 'id' | 'isRead'>) => Promise<void>;
   resetSystem: () => Promise<void>;
@@ -144,6 +141,12 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
+const safeDate = (data: any, field: string) => {
+    if (data[field] && typeof data[field].toDate === 'function') return data[field].toDate();
+    if (data[field] instanceof Date) return data[field];
+    return new Date();
+};
+
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [role, setRole] = useState<UserRole | null>(null);
@@ -162,26 +165,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customExpenseTypes, setCustomExpenseTypes] = useState<CustomExpenseType[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<ExpenseAccount[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [importBatches, setImportBatches] = useState<ImportBatch[]>([]);
   const [users, setUsers] = useState<User[]>([]);
-  const [isDemoMode] = useState(false);
-  const [connectionError] = useState<string | null>(null);
   const [invoiceToEdit, setInvoiceToEdit] = useState<InvoiceSummary | null>(null);
 
   useEffect(() => {
+    const options = { serverTimestamps: 'estimate' as const };
     const unsubShops = onSnapshot(collection(db, 'shops'), (s) => setShops(s.docs.map(d => ({ id: d.id, ...d.data() } as Shop))));
     const unsubProds = onSnapshot(collection(db, 'products'), (s) => setProducts(s.docs.map(d => ({ id: d.id, ...d.data() } as Product))));
-    const unsubTrans = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (s) => setTransactions(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Transaction))));
-    
-    const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => {
-        const data = d.data();
-        return { 
-            ...data,
-            id: d.id, 
-            date: data.date ? (data.date as any).toDate() : new Date() 
-        } as Shipment;
+    const unsubTrans = onSnapshot(query(collection(db, 'transactions'), orderBy('date', 'desc')), (s) => setTransactions(s.docs.map(d => {
+        const data = d.data(options);
+        return { id: d.id, ...data, date: safeDate(data, 'date') } as Transaction;
     })));
-
-    const unsubAlerts = onSnapshot(collection(db, 'alerts'), (s) => setAlerts(s.docs.map(d => ({ id: d.id, ...d.data(), date: d.data().date ? (d.data().date as any).toDate() : new Date() } as Alert))));
+    const unsubShip = onSnapshot(collection(db, 'shipments'), (s) => setShipments(s.docs.map(d => {
+        const data = d.data(options);
+        return { ...data, id: d.id, date: safeDate(data, 'date') } as Shipment;
+    })));
+    const unsubAlerts = onSnapshot(collection(db, 'alerts'), (s) => setAlerts(s.docs.map(d => {
+        const data = d.data(options);
+        return { id: d.id, ...data, date: safeDate(data, 'date') } as Alert;
+    })));
     const unsubCust = onSnapshot(collection(db, 'customers'), (s) => setCustomers(s.docs.map(d => ({ id: d.id, ...d.data() } as Customer))));
     const unsubWH = onSnapshot(collection(db, 'warehouses'), (s) => setWarehouses(s.docs.map(d => ({ id: d.id, ...d.data() } as Warehouse))));
     const unsubAcc = onSnapshot(collection(db, 'accounts'), (s) => setShopAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as ShopAccount))));
@@ -190,13 +193,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const unsubFreight = onSnapshot(collection(db, 'freightForwarders'), (s) => setFreightForwarders(s.docs.map(d => ({ id: d.id, ...d.data() } as FreightForwarder))));
     const unsubCustomExp = onSnapshot(collection(db, 'customExpenseTypes'), (s) => setCustomExpenseTypes(s.docs.map(d => ({ id: d.id, ...d.data() } as CustomExpenseType))));
     const unsubExpAcc = onSnapshot(collection(db, 'expenseAccounts'), (s) => setExpenseAccounts(s.docs.map(d => ({ id: d.id, ...d.data() } as ExpenseAccount))));
-    const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => ({ id: d.id, ...d.data(), purchaseDate: d.data().purchaseDate ? (d.data().purchaseDate as any).toDate() : new Date() } as Asset))));
+    const unsubAssets = onSnapshot(collection(db, 'assets'), (s) => setAssets(s.docs.map(d => {
+        const data = d.data(options);
+        return { id: d.id, ...data, purchaseDate: safeDate(data, 'purchaseDate') } as Asset;
+    })));
     const unsubUsers = onSnapshot(collection(db, 'users'), (s) => setUsers(s.docs.map(d => ({ id: d.id, ...d.data() } as User))));
-
+    const unsubBatches = onSnapshot(query(collection(db, 'importBatches'), orderBy('date', 'desc')), (s) => setImportBatches(s.docs.map(d => {
+        const data = d.data(options);
+        return { id: d.id, ...data, date: safeDate(data, 'date') } as ImportBatch;
+    })));
     return () => {
       unsubShops(); unsubProds(); unsubTrans(); unsubShip(); unsubAlerts(); unsubCust(); 
       unsubWH(); unsubAcc(); unsubCurr(); unsubClearing(); unsubFreight(); unsubCustomExp();
-      unsubExpAcc(); unsubAssets(); unsubUsers();
+      unsubExpAcc(); unsubAssets(); unsubUsers(); unsubBatches();
     };
   }, []);
 
@@ -211,12 +220,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (user) {
       setCurrentUser(user);
       setRole(user.role);
-      setShopId(user.shopId || null);
+      setShopId(user.shopId || (user.allowedShopIds && user.allowedShopIds.length > 0 ? user.allowedShopIds[0] : null));
       return true;
     }
     if (username === 'admin' && password === 'admin123') {
-        const adminUser: User = { id: 'admin-id', name: 'System Admin', username: 'admin', role: UserRole.HEAD_OFFICE };
-        setCurrentUser(adminUser);
+        setCurrentUser({ id: 'admin-id', name: 'System Admin', username: 'admin', role: UserRole.HEAD_OFFICE });
         setRole(UserRole.HEAD_OFFICE);
         setShopId(null);
         return true;
@@ -224,95 +232,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return false;
   }, [users]);
 
-  const logout = useCallback(() => {
-    setCurrentUser(null);
-    setRole(null);
-    setShopId(null);
-  }, []);
-
-  const switchShop = useCallback((id: string | null) => {
-    setShopId(id);
-  }, []);
-
+  const logout = useCallback(() => { setCurrentUser(null); setRole(null); setShopId(null); }, []);
+  const switchShop = useCallback((id: string | null) => setShopId(id), []);
   const addShop = async (shop: Omit<Shop, 'id'>) => { await addDoc(collection(db, 'shops'), shop); };
   const updateShop = async (id: string, data: Partial<Shop>) => { await updateDoc(doc(db, 'shops', id), data); };
   const deleteShop = async (id: string) => { await deleteDoc(doc(db, 'shops', id)); };
   
-  const addCustomer = async (payload: Omit<Customer, 'id'> & { openingBalance?: number }) => { 
+  const addCustomer = async (payload: any) => { 
       const { openingBalance, ...customerData } = payload;
       const ref = await addDoc(collection(db, 'customers'), customerData); 
-      
       if (openingBalance && openingBalance !== 0) {
           const rate = currentShopCurrency.rate || 1;
-          const amountBase = Math.abs(openingBalance) / rate;
-          const type = openingBalance > 0 ? TransactionType.CREDIT_SALE : TransactionType.CUSTOMER_ADVANCE;
-          
           await addDoc(collection(db, 'transactions'), {
-              shopId,
-              customerId: ref.id,
-              invoiceId: 'OPENING-BAL',
-              type: type,
-              description: 'Opening Balance Setup',
-              amount: amountBase,
-              quantity: openingBalance > 0 ? 1 : undefined,
-              date: serverTimestamp(),
+              shopId: customerData.shopId, customerId: ref.id, invoiceId: 'OPENING-BAL',
+              type: openingBalance > 0 ? TransactionType.CREDIT_SALE : TransactionType.CUSTOMER_ADVANCE,
+              description: 'Opening Balance Setup', amount: Math.abs(openingBalance) / rate, date: serverTimestamp(),
           });
       }
   };
 
-  const updateCustomer = async (id: string, data: Partial<Customer> & { openingBalance?: number }) => {
+  const updateCustomer = async (id: string, data: any) => {
       const { openingBalance, ...customerData } = data;
-      
-      // 1. Update Profile
       await updateDoc(doc(db, 'customers', id), customerData);
-
-      // 2. Adjust Ledger if Opening Balance was provided
       if (openingBalance !== undefined) {
-          const q = query(
-              collection(db, 'transactions'), 
-              where('customerId', '==', id), 
-              where('invoiceId', '==', 'OPENING-BAL')
-          );
+          const q = query(collection(db, 'transactions'), where('customerId', '==', id), where('invoiceId', '==', 'OPENING-BAL'));
           const snap = await getDocs(q);
           const rate = currentShopCurrency.rate || 1;
           const amountBase = Math.abs(openingBalance) / rate;
           const type = openingBalance > 0 ? TransactionType.CREDIT_SALE : TransactionType.CUSTOMER_ADVANCE;
-
           if (!snap.empty) {
               const transDoc = snap.docs[0];
-              if (openingBalance === 0) {
-                  await deleteDoc(transDoc.ref);
-              } else {
-                  await updateDoc(transDoc.ref, {
-                      amount: amountBase,
-                      type: type,
-                      shopId: shopId // ensure it stays assigned correctly
-                  });
-              }
+              if (openingBalance === 0) await deleteDoc(transDoc.ref);
+              else await updateDoc(transDoc.ref, { amount: amountBase, type: type });
           } else if (openingBalance !== 0) {
               await addDoc(collection(db, 'transactions'), {
-                  shopId,
-                  customerId: id,
-                  invoiceId: 'OPENING-BAL',
-                  type: type,
-                  description: 'Opening Balance Correction',
-                  amount: amountBase,
-                  date: serverTimestamp(),
+                  shopId, customerId: id, invoiceId: 'OPENING-BAL', type, description: 'Opening Balance Correction',
+                  amount: amountBase, date: serverTimestamp(),
               });
           }
       }
   };
 
   const deleteCustomer = async (id: string) => { 
-      // 1. Delete the profile
       await deleteDoc(doc(db, 'customers', id)); 
-      
-      // 2. Clear out the specific migration entries (OPENING-BAL)
-      const q = query(
-          collection(db, 'transactions'), 
-          where('customerId', '==', id), 
-          where('invoiceId', '==', 'OPENING-BAL')
-      );
+      const q = query(collection(db, 'transactions'), where('customerId', '==', id), where('invoiceId', '==', 'OPENING-BAL'));
       const snap = await getDocs(q);
       if (!snap.empty) {
           const batch = writeBatch(db);
@@ -323,70 +286,34 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateSupplierOpeningBalance = async (openingBalance: number) => {
     if (!shopId) return;
-
-    const q = query(
-        collection(db, 'transactions'), 
-        where('shopId', '==', shopId), 
-        where('invoiceId', '==', 'HO-OPENING-BAL')
-    );
+    const q = query(collection(db, 'transactions'), where('shopId', '==', shopId), where('invoiceId', '==', 'HO-OPENING-BAL'));
     const snap = await getDocs(q);
     const rate = currentShopCurrency.rate || 1;
     const amountBase = openingBalance / rate;
-
     if (!snap.empty) {
         const transDoc = snap.docs[0];
-        if (openingBalance === 0) {
-            await deleteDoc(transDoc.ref);
-        } else {
-            await updateDoc(transDoc.ref, {
-                amount: amountBase,
-                type: TransactionType.IMPORT,
-                quantity: 1,
-                description: 'Supplier Opening Balance'
-            });
-        }
+        if (openingBalance === 0) await deleteDoc(transDoc.ref);
+        else await updateDoc(transDoc.ref, { amount: amountBase, type: TransactionType.IMPORT, description: 'Supplier Opening Balance' });
     } else if (openingBalance !== 0) {
         await addDoc(collection(db, 'transactions'), {
-            shopId,
-            invoiceId: 'HO-OPENING-BAL',
-            type: TransactionType.IMPORT,
-            description: 'Supplier Opening Balance',
-            amount: amountBase,
-            quantity: 1,
-            date: serverTimestamp(),
+            shopId, invoiceId: 'HO-OPENING-BAL', type: TransactionType.IMPORT, description: 'Supplier Opening Balance',
+            amount: amountBase, date: serverTimestamp(),
         });
     }
   };
 
   const bulkAddCustomers = async (payload: BulkCustomerPayload[]) => {
       const batch = writeBatch(db);
-      const rate = Number(currentShopCurrency.rate) || 1;
-      
+      const rate = currentShopCurrency.rate || 1;
       payload.forEach(item => {
           const customerRef = doc(collection(db, 'customers'));
-          const customerId = customerRef.id;
-          
-          batch.set(customerRef, {
-              name: item.name,
-              phone: item.phone,
-              reference: item.reference,
-              shopId: shopId
-          });
-
+          batch.set(customerRef, { name: item.name, phone: item.phone, reference: item.reference, shopId: shopId });
           if (item.openingBalance !== 0) {
               const transRef = doc(collection(db, 'transactions'));
-              const amountBase = Math.abs(item.openingBalance) / rate;
-              const type = item.openingBalance > 0 ? TransactionType.CREDIT_SALE : TransactionType.CUSTOMER_ADVANCE;
-              
-              batch.set(transRef, {
-                  shopId,
-                  customerId,
-                  invoiceId: 'OPENING-BAL',
-                  type: type,
-                  description: 'Opening Balance Migration (CSV Import)',
-                  amount: amountBase,
-                  quantity: item.openingBalance > 0 ? 1 : undefined,
-                  date: serverTimestamp(),
+              batch.set(transRef, { 
+                shopId, customerId: customerRef.id, invoiceId: 'OPENING-BAL', 
+                type: item.openingBalance > 0 ? TransactionType.CREDIT_SALE : TransactionType.CUSTOMER_ADVANCE, 
+                description: 'Opening Balance Migration', amount: Math.abs(item.openingBalance) / rate, date: serverTimestamp() 
               });
           }
       });
@@ -394,193 +321,83 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addProduct = async (productData: Omit<Product, 'id'>) => { 
-      // 1. Calculate next sequential ID
       const itemsWithNewId = products.filter(p => p.id.startsWith('ITEM-'));
       let nextSeq = 1001;
       if (itemsWithNewId.length > 0) {
-          const maxId = Math.max(...itemsWithNewId.map(p => {
-              const suffix = p.id.split('-')[1];
-              return parseInt(suffix) || 0;
-          }));
+          const maxId = Math.max(...itemsWithNewId.map(p => parseInt(p.id.split('-')[1]) || 0));
           nextSeq = maxId + 1;
       }
-      const newId = `ITEM-${nextSeq}`;
-      
-      // 2. Set with specific ID
-      await setDoc(doc(db, 'products', newId), productData); 
+      await setDoc(doc(db, 'products', `ITEM-${nextSeq}`), productData); 
   };
   
   const standardizeItemIds = async () => {
-      console.log("[MIGRATION] Starting Item ID Standardization...");
-      
       const itemsToMigrate = products.filter(p => !p.id.startsWith('ITEM-'));
-      if (itemsToMigrate.length === 0) {
-          console.log("[MIGRATION] All items already standardized.");
-          return;
-      }
-
-      // Step 1: Build the mapping of Old ID -> New ID
-      const itemsWithId = products.filter(p => p.id.startsWith('ITEM-'));
-      let currentMax = itemsWithId.length > 0 ? Math.max(...itemsWithId.map(p => {
-          const suffix = p.id.split('-')[1];
-          return parseInt(suffix) || 0;
-      })) : 1000;
-
-      const idMap: Record<string, string> = {};
-      itemsToMigrate.forEach(item => {
-          currentMax++;
-          idMap[item.id] = `ITEM-${currentMax}`;
+      if (itemsToMigrate.length === 0) return;
+      let currentMax = 1000;
+      products.filter(p => p.id.startsWith('ITEM-')).forEach(p => {
+          const seq = parseInt(p.id.split('-')[1]) || 0;
+          if (seq > currentMax) currentMax = seq;
       });
-
-      // Step 2: Fetch all records that might contain Product IDs
+      const idMap: Record<string, string> = {};
+      itemsToMigrate.forEach(item => { currentMax++; idMap[item.id] = `ITEM-${currentMax}`; });
       const transSnap = await getDocs(collection(db, 'transactions'));
-      const shipmentsSnap = await getDocs(collection(db, 'shipments'));
-
-      // Step 3: Perform updates in batches (limit of 500 per batch)
       let batch = writeBatch(db);
       let opCount = 0;
-
-      const commitAndResetBatch = async () => {
-          if (opCount > 0) {
-              await batch.commit();
-              batch = writeBatch(db);
-              opCount = 0;
-          }
-      };
-
-      // 1. Migrate Product Documents
+      const commit = async () => { if (opCount > 0) { await batch.commit(); batch = writeBatch(db); opCount = 0; } };
       for (const item of itemsToMigrate) {
-          const newId = idMap[item.id];
-          const oldId = item.id;
-          
           const { id, ...data } = item;
-          batch.set(doc(db, 'products', newId), data);
-          batch.delete(doc(db, 'products', oldId));
-          opCount += 2;
-          
-          if (opCount >= 450) await commitAndResetBatch();
+          batch.set(doc(db, 'products', idMap[item.id]), data);
+          batch.delete(doc(db, 'products', item.id));
+          opCount += 2; if (opCount >= 450) await commit();
       }
-
-      // 2. Update Transaction References
-      // IMPORTANT: Each document only updated ONCE in the batch.
       for (const d of transSnap.docs) {
-          const currentPid = d.data().productId;
-          if (currentPid && idMap[currentPid]) {
-              batch.update(d.ref, { productId: idMap[currentPid] });
-              opCount++;
-              if (opCount >= 450) await commitAndResetBatch();
+          if (d.data().productId && idMap[d.data().productId]) {
+              batch.update(d.ref, { productId: idMap[d.data().productId] });
+              opCount++; if (opCount >= 450) await commit();
           }
       }
+      await commit();
+  };
 
-      // 3. Update Shipment Manifests
-      for (const d of shipmentsSnap.docs) {
-          const data = d.data();
-          let changed = false;
-          
-          // Regular items
-          const updatedItems = (data.items || []).map((item: any) => {
-              if (idMap[item.productId]) {
-                  changed = true;
-                  return { ...item, productId: idMap[item.productId] };
-              }
-              return item;
-          });
-
-          // Extra items
-          const updatedExtra = (data.extraItemsReceived || []).map((item: any) => {
-            if (idMap[item.productId]) {
-                changed = true;
-                return { ...item, productId: idMap[item.productId] };
+  const bulkSyncProducts = async (productsData: any[]): Promise<Map<string, string>> => {
+    const processedNameToIdMap = new Map<string, string>(); 
+    let currentMax = 1000;
+    products.filter(p => p.id.startsWith('ITEM-')).forEach(p => {
+        const seq = parseInt(p.id.split('-')[1]) || 0;
+        if (seq > currentMax) currentMax = seq;
+    });
+    const CHUNK_SIZE = 450;
+    for (let i = 0; i < productsData.length; i += CHUNK_SIZE) {
+        const chunk = productsData.slice(i, i + CHUNK_SIZE);
+        const batch = writeBatch(db);
+        for (const p of chunk) {
+            const lowercaseName = p.name.toLowerCase();
+            let idToUse = p.id;
+            if (!idToUse) {
+                const existing = products.find(prod => prod.name.toLowerCase() === lowercaseName);
+                if (existing) idToUse = existing.id;
+                else { currentMax++; idToUse = `ITEM-${currentMax}`; }
             }
-            return item;
-          });
-
-          if (changed) {
-              batch.update(d.ref, { items: updatedItems, extraItemsReceived: updatedExtra });
-              opCount++;
-              if (opCount >= 450) await commitAndResetBatch();
-          }
-      }
-
-      await commitAndResetBatch();
-      console.log("[MIGRATION] Successfully standardized all item IDs.");
-      window.location.reload();
-  };
-
-  const bulkSyncProducts = async (productsData: (Partial<Product> & { name: string })[]): Promise<Map<string, string>> => {
-      const batch = writeBatch(db);
-      const nameToIdMap = new Map<string, string>();
-
-      const itemsWithId = products.filter(p => p.id.startsWith('ITEM-'));
-      let currentMax = itemsWithId.length > 0 ? Math.max(...itemsWithId.map(p => {
-          const suffix = p.id.split('-')[1];
-          return parseInt(suffix) || 0;
-      })) : 1000;
-
-      for (const p of productsData) {
-          let targetDoc;
-          let idToUse = p.id;
-          const lowercaseName = p.name.toLowerCase();
-
-          if (idToUse) {
-              targetDoc = doc(db, 'products', idToUse);
-              nameToIdMap.set(lowercaseName, idToUse);
-          } else {
-              const existing = products.find(prod => prod.name.toLowerCase() === lowercaseName);
-              if (existing) {
-                  idToUse = existing.id;
-                  targetDoc = doc(db, 'products', idToUse);
-                  nameToIdMap.set(lowercaseName, idToUse);
-              } else {
-                  currentMax++;
-                  idToUse = `ITEM-${currentMax}`;
-                  targetDoc = doc(db, 'products', idToUse);
-                  nameToIdMap.set(lowercaseName, idToUse);
-              }
-          }
-
-          const { id, ...cleanProduct } = p;
-          batch.set(targetDoc, cleanProduct, { merge: true });
-      }
-      
-      await batch.commit();
-      return nameToIdMap;
-  };
-
-  const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { 
-    try {
-        const safeAccount = {
-            ...account,
-            openingBalance: Number(account.openingBalance) || 0
-        };
-        await addDoc(collection(db, 'accounts'), safeAccount); 
-    } catch (e) {
-        console.error('AppContext: Error in addShopAccount:', e);
-        throw e;
+            processedNameToIdMap.set(lowercaseName, idToUse);
+            const { id, ...cleanProduct } = p;
+            batch.set(doc(db, 'products', idToUse), cleanProduct, { merge: true });
+        }
+        await batch.commit();
     }
+    return processedNameToIdMap;
   };
 
-  const updateShopAccount = async (id: string, data: Partial<ShopAccount>) => {
-      await updateDoc(doc(db, 'accounts', id), data);
-  };
-
-  const updateCurrency = async (data: { id: string, rate: number }) => { 
-      const curr = currencies.find(c => c.id === data.id);
-      if (curr) await updateDoc(doc(db, 'currencies', curr.id), { rate: Number(data.rate) || 1 }); 
-  };
-  const addCurrency = async (currency: Currency) => { 
-      await setDoc(doc(db, 'currencies', currency.id), { ...currency, rate: Number(currency.rate) || 1 }); 
-  };
+  const addShopAccount = async (account: Omit<ShopAccount, 'id'>) => { await addDoc(collection(db, 'accounts'), account); };
+  const updateShopAccount = async (id: string, data: Partial<ShopAccount>) => { await updateDoc(doc(db, 'accounts', id), data); };
+  const updateCurrency = async (data: { id: string, rate: number }) => { await updateDoc(doc(db, 'currencies', data.id), { rate: data.rate }); };
+  const addCurrency = async (currency: Currency) => { await setDoc(doc(db, 'currencies', currency.id), currency); };
 
   const getStockLevel = useCallback((productId: string, locationId?: string) => {
     let stock = 0;
     transactions.forEach(t => {
       if (t.productId === productId && (!locationId || t.locationId === locationId || (!t.locationId && locationId === t.shopId))) {
-        if (t.type === TransactionType.IMPORT || t.type === TransactionType.STOCK_TRANSFER_IN || t.type === TransactionType.SALES_RETURN || t.type === TransactionType.OPENING_STOCK) {
-          stock += (t.quantity || 0);
-        } else if (t.type === TransactionType.CASH_SALE || t.type === TransactionType.CREDIT_SALE || t.type === TransactionType.STOCK_TRANSFER_OUT) {
-          stock -= (t.quantity || 0);
-        }
+        if ([TransactionType.IMPORT, TransactionType.STOCK_TRANSFER_IN, TransactionType.SALES_RETURN, TransactionType.OPENING_STOCK].includes(t.type)) stock += (t.quantity || 0);
+        else if ([TransactionType.CASH_SALE, TransactionType.CREDIT_SALE, TransactionType.STOCK_TRANSFER_OUT, TransactionType.STOCK_WRITE_OFF].includes(t.type)) stock -= (t.quantity || 0);
       }
     });
     return stock;
@@ -590,337 +407,187 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let balance = 0;
     transactions.forEach(t => {
         if (t.customerId === customerId) {
-            if (t.type === TransactionType.CUSTOMER_ADVANCE) balance += (Number(t.amount) || 0);
-            if (t.type === TransactionType.ADVANCE_USAGE) balance -= (Number(t.amount) || 0);
+            if (t.type === TransactionType.CUSTOMER_ADVANCE) balance += t.amount;
+            if (t.type === TransactionType.ADVANCE_USAGE) balance -= t.amount;
         }
     });
     return balance;
   }, [transactions]);
 
   const formatCurrency = useCallback((amountInBase: number) => {
-    const rate = Number(currentShopCurrency.rate) || 1;
-    const amount = amountInBase * rate;
+    const amount = amountInBase * (currentShopCurrency.rate || 1);
     return `${currentShopCurrency.symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }, [currentShopCurrency]);
 
-  const logAlert = async (alert: Omit<Alert, 'id' | 'isRead'>) => {
-      await addDoc(collection(db, 'alerts'), { ...alert, isRead: false, date: serverTimestamp() });
-  };
-
-  const markAlertAsRead = async (id: string) => {
-      await updateDoc(doc(db, 'alerts', id), { isRead: true });
-  };
-
   const recordSale = async (payload: any) => {
       const batch = writeBatch(db);
-      const { shopId, customerId, invoiceNumber, items, cashPaid, advanceApplied, date, paymentAccountId, manualReference } = payload;
-      const rate = Number(currentShopCurrency.rate) || 1;
-      const shop = shops.find(s => s.id === shopId);
-      const totalInvoiceValueLocal = items.reduce((s: number, i: SaleItem) => s + (i.salePrice * i.quantity), 0);
-      const isCreditSale = (Number(cashPaid) + Number(advanceApplied)) < (totalInvoiceValueLocal - 0.01);
-      const saleType = isCreditSale ? TransactionType.CREDIT_SALE : TransactionType.CASH_SALE;
-
-      items.forEach((item: SaleItem) => {
+      const rate = currentShopCurrency.rate || 1;
+      const totalLocal = payload.items.reduce((s: number, i: any) => s + (i.salePrice * i.quantity), 0);
+      const isCredit = (payload.cashPaid + payload.advanceApplied) < (totalLocal - 0.01);
+      payload.items.forEach((item: any) => {
           const product = products.find(p => p.id === item.productId);
-          const unitPriceBase = (Number(item.salePrice) || 0) / rate;
           if (product && item.salePrice < product.minSalePrice * rate) {
-              const alertRef = doc(collection(db, 'alerts'));
-              batch.set(alertRef, {
-                  shopId: 'HO',
-                  type: AlertType.PRICE_VIOLATION,
-                  message: `Price Violation: ${product.name} sold for ${currentShopCurrency.symbol}${item.salePrice} (Min: ${currentShopCurrency.symbol}${(product.minSalePrice * rate).toFixed(2)}) at ${shop?.name}`,
-                  context: { invoiceId: invoiceNumber, productId: item.productId, shopId, shopName: shop?.name },
-                  date: Timestamp.fromDate(date),
-                  isRead: false
-              });
+              batch.set(doc(collection(db, 'alerts')), { shopId: 'HO', type: AlertType.PRICE_VIOLATION, message: `Violation: ${product.name} sold low at ${shops.find(s => s.id === payload.shopId)?.name}`, date: serverTimestamp(), isRead: false, context: { invoiceId: payload.invoiceNumber, shopId: payload.shopId } });
           }
-          const saleRef = doc(collection(db, 'transactions'));
-          batch.set(saleRef, {
-              shopId, customerId, invoiceId: invoiceNumber, externalReference: manualReference, productId: item.productId,
-              type: saleType, description: `Sale of ${product?.name}`, amount: unitPriceBase, quantity: Number(item.quantity) || 0,
-              date: Timestamp.fromDate(date), locationId: item.locationId || shopId
-          });
+          batch.set(doc(collection(db, 'transactions')), { ...item, amount: item.salePrice / rate, type: isCredit ? TransactionType.CREDIT_SALE : TransactionType.CASH_SALE, shopId: payload.shopId, customerId: payload.customerId, invoiceId: payload.invoiceNumber, date: Timestamp.fromDate(payload.date) });
       });
-
-      if (Number(cashPaid) > 0) {
-          const receiptRef = doc(collection(db, 'transactions'));
-          batch.set(receiptRef, {
-              shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.SALES_RECEIPT, description: `Payment for Invoice #${invoiceNumber}`,
-              amount: (Number(cashPaid) || 0) / rate, date: Timestamp.fromDate(date), paymentAccountId
-          });
-      }
-      if (Number(advanceApplied) > 0) {
-          const advanceRef = doc(collection(db, 'transactions'));
-          batch.set(advanceRef, {
-              shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.ADVANCE_USAGE, description: `Advance applied to Invoice #${invoiceNumber}`,
-              amount: (Number(advanceApplied) || 0) / rate, date: Timestamp.fromDate(date)
-          });
-      }
+      if (payload.cashPaid > 0) batch.set(doc(collection(db, 'transactions')), { shopId: payload.shopId, customerId: payload.customerId, type: TransactionType.SALES_RECEIPT, amount: payload.cashPaid / rate, paymentAccountId: payload.paymentAccountId, invoiceId: payload.invoiceNumber, date: Timestamp.fromDate(payload.date) });
+      if (payload.advanceApplied > 0) batch.set(doc(collection(db, 'transactions')), { shopId: payload.shopId, customerId: payload.customerId, type: TransactionType.ADVANCE_USAGE, amount: payload.advanceApplied / rate, invoiceId: payload.invoiceNumber, date: Timestamp.fromDate(payload.date) });
       await batch.commit();
   };
 
   const updateSale = async (payload: any) => {
-    const { shopId, customerId, invoiceNumber, deletedTransactionIds } = payload;
-    if (!shopId || !customerId || !invoiceNumber || !Array.isArray(deletedTransactionIds)) {
-        throw new Error("Invalid payload for updateSale. Required fields are missing or malformed.");
-    }
+      const batch = writeBatch(db);
+      payload.deletedTransactionIds.forEach((id: string) => batch.delete(doc(db, 'transactions', id)));
+      await batch.commit();
+      await recordSale(payload);
+  };
 
+  const deleteInvoice = async (ids: string[]) => {
+      const batch = writeBatch(db);
+      ids.forEach(id => batch.delete(doc(db, 'transactions', id)));
+      await batch.commit();
+  };
+
+  const recordPayment = async (payload: any) => { await addDoc(collection(db, 'transactions'), { ...payload, amount: payload.amount / currentShopCurrency.rate, type: TransactionType.SALES_RECEIPT, date: Timestamp.fromDate(payload.date) }); };
+  const addExpense = async (payload: any) => { await addDoc(collection(db, 'transactions'), { ...payload, amount: payload.amount / currentShopCurrency.rate, type: TransactionType.EXPENSE, date: Timestamp.fromDate(payload.date) }); };
+  const addWarehouse = async (w: any) => { await addDoc(collection(db, 'warehouses'), w); };
+  const transferStock = async (p: any) => {
+      const batch = writeBatch(db);
+      batch.set(doc(collection(db, 'transactions')), { ...p, type: TransactionType.STOCK_TRANSFER_OUT, locationId: p.fromLocationId, date: Timestamp.fromDate(p.date), amount: 0 });
+      batch.set(doc(collection(db, 'transactions')), { ...p, type: TransactionType.STOCK_TRANSFER_IN, locationId: p.toLocationId, date: Timestamp.fromDate(p.date), amount: 0 });
+      await batch.commit();
+  };
+  const addAsset = async (a: any) => {
+      await addDoc(collection(db, 'assets'), { ...a, purchaseCost: a.purchaseCost / currentShopCurrency.rate, status: AssetStatus.ACTIVE, purchaseDate: Timestamp.fromDate(a.purchaseDate) });
+      await addDoc(collection(db, 'transactions'), { shopId: a.shopId, type: TransactionType.EXPENSE, amount: a.purchaseCost / currentShopCurrency.rate, paymentAccountId: a.paymentAccountId, expenseAccountId: a.expenseAccountId, description: `Asset: ${a.name}`, date: Timestamp.fromDate(a.purchaseDate) });
+  };
+  const recordAdvance = async (p: any) => { await addDoc(collection(db, 'transactions'), { ...p, amount: p.amount / currentShopCurrency.rate, type: TransactionType.CUSTOMER_ADVANCE, date: Timestamp.fromDate(p.date) }); };
+
+  const receiveShipment = async (payload: any) => {
+      const shipment = shipments.find(s => s.id === payload.shipmentId);
+      if (!shipment) return;
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'shipments', payload.shipmentId), { status: ShipmentStatus.RECEIVED, receivedItems: payload.receivedItems });
+      payload.receivedItems.forEach((ri: any) => {
+          const item = shipment.items.find(si => si.productId === ri.productId);
+          if (item) batch.set(doc(collection(db, 'transactions')), { shopId: shipment.shopId, productId: ri.productId, quantity: ri.quantity, amount: item.landedCost, type: TransactionType.IMPORT, date: serverTimestamp(), locationId: payload.locationId });
+      });
+      await batch.commit();
+  };
+
+  const addExport = async (p: any) => { await setDoc(doc(db, 'shipments', p.shipmentId), { ...p, date: serverTimestamp(), status: ShipmentStatus.PENDING }); };
+  const updateShipmentCosts = async (p: any) => { const { shipmentId, ...costs } = p; await updateDoc(doc(db, 'shipments', shipmentId), costs); };
+  const recordPaymentVoucher = async (p: any) => { await addDoc(collection(db, 'transactions'), { ...p, amount: p.amount / (p.shopId === 'HO' ? 1 : currentShopCurrency.rate), type: TransactionType.EXPENSE, date: Timestamp.fromDate(p.date) }); };
+  const recordSalesReturn = async (p: any) => {
+      const batch = writeBatch(db);
+      const rate = currentShopCurrency.rate || 1;
+      p.returnedItems.forEach((i: any) => batch.set(doc(collection(db, 'transactions')), { shopId: p.shopId, customerId: p.customerId, productId: i.productId, quantity: i.quantity, amount: i.salePrice / rate, type: TransactionType.SALES_RETURN, date: Timestamp.fromDate(p.date), locationId: p.locationId }));
+      if (p.refundMethod === 'cash') batch.set(doc(collection(db, 'transactions')), { shopId: p.shopId, type: TransactionType.EXPENSE, amount: p.returnedItems.reduce((s:number, i:any) => s+(i.quantity*i.salePrice), 0) / rate, paymentAccountId: p.paymentAccountId, date: Timestamp.fromDate(p.date) });
+      await batch.commit();
+  };
+
+  const addOpeningStock = async (p: any) => { await addDoc(collection(db, 'transactions'), { ...p, amount: p.unitCost / currentShopCurrency.rate, type: TransactionType.OPENING_STOCK, date: Timestamp.fromDate(p.date) }); };
+  
+  const bulkAddOpeningStock = async (p: OpeningStockPayload[], syncedCount: number) => {
     const batch = writeBatch(db);
-
-    // 1. Delete all old transactions by their unique document IDs for robustness.
-    deletedTransactionIds.forEach((id: string) => {
-        batch.delete(doc(db, 'transactions', id));
+    const batchId = doc(collection(db, 'temp')).id;
+    p.forEach(item => { 
+        const { unitCost, ...transactionData } = item;
+        batch.set(doc(collection(db, 'transactions')), { 
+            ...transactionData, 
+            amount: unitCost, 
+            importBatchId: batchId, 
+            type: TransactionType.OPENING_STOCK, 
+            date: serverTimestamp() 
+        }); 
     });
-
-    // 2. Re-create transactions using the same logic as recordSale
-    const { items, cashPaid, advanceApplied, date, paymentAccountId, manualReference } = payload;
-    const rate = Number(currentShopCurrency.rate) || 1;
-    const shop = shops.find(s => s.id === shopId);
-    const totalInvoiceValueLocal = items.reduce((s: number, i: SaleItem) => s + (i.salePrice * i.quantity), 0);
-    const isCreditSale = (Number(cashPaid) + Number(advanceApplied)) < (totalInvoiceValueLocal - 0.01);
-    const saleType = isCreditSale ? TransactionType.CREDIT_SALE : TransactionType.CASH_SALE;
-
-    items.forEach((item: SaleItem) => {
-        const product = products.find(p => p.id === item.productId);
-        const unitPriceBase = (Number(item.salePrice) || 0) / rate;
-        if (product && item.salePrice < product.minSalePrice * rate) {
-            const alertRef = doc(collection(db, 'alerts'));
-            batch.set(alertRef, {
-                shopId: 'HO',
-                type: AlertType.PRICE_VIOLATION,
-                message: `Price Violation (EDIT): ${product.name} sold for ${currentShopCurrency.symbol}${item.salePrice} (Min: ${currentShopCurrency.symbol}${(product.minSalePrice * rate).toFixed(2)}) at ${shop?.name}`,
-                context: { invoiceId: invoiceNumber, productId: item.productId, shopId, shopName: shop?.name },
-                date: Timestamp.fromDate(date),
-                isRead: false
-            });
-        }
-        const saleRef = doc(collection(db, 'transactions'));
-        batch.set(saleRef, {
-            shopId, customerId, invoiceId: invoiceNumber, externalReference: manualReference, productId: item.productId,
-            type: saleType, description: `Sale of ${product?.name}`, amount: unitPriceBase, quantity: Number(item.quantity) || 0,
-            date: Timestamp.fromDate(date), locationId: item.locationId || shopId
-        });
-    });
-
-    if (Number(cashPaid) > 0) {
-        const receiptRef = doc(collection(db, 'transactions'));
-        batch.set(receiptRef, {
-            shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.SALES_RECEIPT, description: `Payment for Invoice #${invoiceNumber}`,
-            amount: (Number(cashPaid) || 0) / rate, date: Timestamp.fromDate(date), paymentAccountId
-        });
-    }
-    if (Number(advanceApplied) > 0) {
-        const advanceRef = doc(collection(db, 'transactions'));
-        batch.set(advanceRef, {
-            shopId, customerId, invoiceId: invoiceNumber, type: TransactionType.ADVANCE_USAGE, description: `Advance applied to Invoice #${invoiceNumber}`,
-            amount: (Number(advanceApplied) || 0) / rate, date: Timestamp.fromDate(date)
-        });
-    }
+    batch.set(doc(db, 'importBatches', batchId), { shopId: p[0].shopId, itemCount: p.length, syncedProducts: syncedCount, date: serverTimestamp() });
     await batch.commit();
   };
 
-  const deleteInvoice = async (transactionIdsToDelete: string[]) => {
+  const deleteImportBatch = async (id: string) => {
+      const q = query(collection(db, 'transactions'), where('importBatchId', '==', id));
+      const snap = await getDocs(q);
       const batch = writeBatch(db);
-      transactionIdsToDelete.forEach(id => {
-          batch.delete(doc(db, 'transactions', id));
-      });
+      snap.docs.forEach(d => batch.delete(d.ref));
+      batch.delete(doc(db, 'importBatches', id));
       await batch.commit();
   };
 
-  const recordPayment = async (payload: any) => {
-      const rate = Number(currentShopCurrency.rate) || 1;
-      await addDoc(collection(db, 'transactions'), {
-          shopId: payload.shopId, customerId: payload.customerId, type: TransactionType.SALES_RECEIPT,
-          description: payload.notes || 'Customer Payment', amount: (Number(payload.amount) || 0) / rate,
-          date: Timestamp.fromDate(payload.date), paymentAccountId: payload.paymentAccountId
-      });
-  };
-
-  const addExpense = async (payload: any) => {
-      const rate = Number(currentShopCurrency.rate) || 1;
-      await addDoc(collection(db, 'transactions'), {
-          shopId: payload.shopId, expenseAccountId: payload.expenseAccountId, type: TransactionType.EXPENSE,
-          description: payload.description || 'Shop Expense', amount: (Number(payload.amount) || 0) / rate,
-          date: Timestamp.fromDate(payload.date), paymentAccountId: payload.paymentAccountId
-      });
-  };
-
-  const addWarehouse = async (warehouse: Omit<Warehouse, 'id'>) => { await addDoc(collection(db, 'warehouses'), warehouse); };
-
-  const transferStock = async (payload: any) => {
+  const purgeOpeningStock = async (sid: string) => {
+      const q = query(collection(db, 'transactions'), where('shopId', '==', sid), where('type', '==', TransactionType.OPENING_STOCK));
+      const snap = await getDocs(q);
       const batch = writeBatch(db);
-      const outRef = doc(collection(db, 'transactions'));
-      batch.set(outRef, {
-          shopId: payload.shopId, productId: payload.productId, type: TransactionType.STOCK_TRANSFER_OUT,
-          description: `Transfer to ${warehouses.find(w => w.id === payload.toLocationId)?.name || 'Other Location'}`,
-          quantity: Number(payload.quantity) || 0, amount: 0, date: Timestamp.fromDate(payload.date), locationId: payload.fromLocationId
-      });
-      const inRef = doc(collection(db, 'transactions'));
-      batch.set(inRef, {
-          shopId: payload.shopId, productId: payload.productId, type: TransactionType.STOCK_TRANSFER_IN,
-          description: `Transfer from ${warehouses.find(w => w.id === payload.fromLocationId)?.name || 'Other Location'}`,
-          quantity: Number(payload.quantity) || 0, amount: 0, date: Timestamp.fromDate(payload.date), locationId: payload.toLocationId
-      });
+      snap.docs.forEach(d => batch.delete(d.ref));
       await batch.commit();
   };
 
-  const addAsset = async (asset: Omit<Asset, 'id' | 'status'>) => {
-      const rate = Number(currentShopCurrency.rate) || 1;
-      await addDoc(collection(db, 'assets'), { ...asset, status: AssetStatus.ACTIVE });
-      await addDoc(collection(db, 'transactions'), {
-          shopId: asset.shopId, expenseAccountId: asset.expenseAccountId, type: TransactionType.EXPENSE,
-          description: `Asset Purchase: ${asset.name}`, amount: (Number(asset.purchaseCost) || 0) / rate,
-          date: Timestamp.fromDate(asset.purchaseDate), paymentAccountId: asset.paymentAccountId
-      });
-  };
+  const deleteStockTransactions = async (items: { productId: string, locationId: string }[]) => {
+      if (!shopId) return;
+      const CHUNK_SIZE = 450;
+      for (const item of items) {
+          // Use a simpler query (shop + product) and filter locally to avoid indexing hangs
+          const q = query(
+              collection(db, 'transactions'), 
+              where('shopId', '==', shopId),
+              where('productId', '==', item.productId)
+          );
+          const snap = await getDocs(q);
+          // Filter locally to find matches for location
+          const matches = snap.docs.filter(d => {
+              const data = d.data();
+              const loc = data.locationId || data.shopId; // normalize
+              return loc === item.locationId;
+          });
 
-  const recordAdvance = async (payload: any) => {
-    const rate = Number(currentShopCurrency.rate) || 1;
-    await addDoc(collection(db, 'transactions'), {
-        shopId: payload.shopId, customerId: payload.customerId, type: TransactionType.CUSTOMER_ADVANCE,
-        description: 'Customer Advance Payment', amount: (Number(payload.amount) || 0) / rate,
-        date: Timestamp.fromDate(payload.date), paymentAccountId: payload.paymentAccountId,
-        advanceForItems: payload.advanceForItems, receiptNumber: `ADV-${Math.floor(Math.random()*10000)}`
-    });
-  };
-
-  const receiveShipment = async (payload: { shipmentId: string, receivedItems: any[], locationId: string, extraItems?: ReceivedExtraItem[] }) => {
-      const shipment = shipments.find(s => s.id === payload.shipmentId);
-      if (!shipment) throw new Error("Shipment ID not found.");
-      const batch = writeBatch(db);
-      const shipmentRef = doc(db, 'shipments', payload.shipmentId);
-      const rate = Number(currentShopCurrency.rate) || 1;
-      batch.set(shipmentRef, { 
-          status: ShipmentStatus.RECEIVED,
-          items: shipment.items.map(item => {
-              const received = payload.receivedItems.find((ri: any) => ri.productId === item.productId);
-              return { ...item, receivedQuantity: Number(received?.quantity) || 0 };
-          }),
-          extraItemsReceived: payload.extraItems || []
-      }, { merge: true });
-      payload.receivedItems.forEach((ri: any) => {
-          const item = shipment.items.find(si => si.productId === ri.productId);
-          if (item && Number(ri.quantity) > 0) {
-              const transRef = doc(collection(db, 'transactions'));
-              batch.set(transRef, { shopId: shipment.shopId, productId: ri.productId, type: TransactionType.IMPORT, description: `Import: Shipment #${shipment.id}`, quantity: Number(ri.quantity) || 0, amount: Number(item.landedCost) || 0, date: serverTimestamp(), locationId: payload.locationId });
+          for (let i = 0; i < matches.length; i += CHUNK_SIZE) {
+              const chunk = matches.slice(i, i + CHUNK_SIZE);
+              const batch = writeBatch(db);
+              chunk.forEach(d => batch.delete(d.ref));
+              await batch.commit();
           }
-      });
-      if (payload.extraItems) {
-        payload.extraItems.forEach((ei) => {
-            const transRef = doc(collection(db, 'transactions'));
-            batch.set(transRef, { shopId: shipment.shopId, productId: ei.productId, type: TransactionType.IMPORT, description: `Import (Extra) - Shipment #${shipment.id}`, quantity: Number(ei.quantity) || 0, amount: (Number(ei.unitCost) || 0) / rate, date: serverTimestamp(), locationId: payload.locationId });
-        });
       }
-      await batch.commit();
   };
 
-  const addExport = async (payload: any) => {
-      await setDoc(doc(db, 'shipments', payload.shipmentId), {
-          shopId: payload.shopId, date: serverTimestamp(), status: ShipmentStatus.PENDING, items: payload.items,
-          freightCost: Number(payload.freightCost) || 0, freightForwarderId: payload.freightForwarder?.id || '',
-          clearingCost: Number(payload.clearingCost) || 0, clearingAgentId: payload.clearingAgent?.id || '',
-          customExpenseCost: Number(payload.customExpenseCost) || 0, customExpenseTypeId: payload.customExpense?.typeId || '',
-          expectedDuty: Number(payload.expectedDuty) || 0
-      });
-  };
-
-  const updateShipmentCosts = async (payload: any) => {
-      await updateDoc(doc(db, 'shipments', payload.shipmentId), { freightCost: Number(payload.freightCost) || 0, clearingCost: Number(payload.clearingCost) || 0, customExpenseCost: Number(payload.customExpenseCost) || 0, expectedDuty: Number(payload.expectedDuty) || 0 });
-  };
-
-  const recordPaymentVoucher = async (payload: any) => {
-      const rate = Number(currentShopCurrency.rate) || 1;
-      await addDoc(collection(db, 'transactions'), {
-          shopId: payload.shopId, type: TransactionType.EXPENSE, description: payload.notes || `Payment: ${payload.beneficiaryName || payload.category}`,
-          amount: (Number(payload.amount) || 0) / (payload.shopId === 'HO' ? 1 : rate), date: Timestamp.fromDate(payload.date),
-          paymentAccountId: payload.paymentAccountId, expenseAccountId: payload.referenceId, expenseCategory: payload.category
-      });
-  };
-
-  const recordSalesReturn = async (payload: any) => {
-      const batch = writeBatch(db);
-      const rate = Number(currentShopCurrency.rate) || 1;
-      payload.returnedItems.forEach((item: any) => {
-          const retRef = doc(collection(db, 'transactions'));
-          batch.set(retRef, { shopId: payload.shopId, customerId: payload.customerId, invoiceId: payload.invoiceId, productId: item.productId, type: TransactionType.SALES_RETURN, description: `Return: ${payload.reason}`, amount: (Number(item.salePrice) || 0) / rate, quantity: Number(item.quantity) || 0, date: Timestamp.fromDate(payload.date), locationId: payload.locationId });
-      });
-      if (payload.refundMethod === 'cash') {
-          const refundRef = doc(collection(db, 'transactions'));
-          const totalRefund = payload.returnedItems.reduce((s: number, i: any) => s + ((Number(i.quantity) || 0) * (Number(i.salePrice) || 0)), 0);
-          batch.set(refundRef, { shopId: payload.shopId, type: TransactionType.EXPENSE, description: `Refund: #${payload.invoiceId}`, amount: totalRefund / rate, date: Timestamp.fromDate(payload.date), paymentAccountId: payload.paymentAccountId });
-      }
-      await batch.commit();
-  };
-
-  const addOpeningStock = async (payload: OpeningStockPayload) => {
-      await addDoc(collection(db, 'transactions'), { shopId: payload.shopId, productId: payload.productId, type: TransactionType.OPENING_STOCK, description: payload.notes, quantity: Number(payload.quantity) || 0, amount: (Number(payload.unitCost) || 0) / (Number(currentShopCurrency.rate) || 1), date: Timestamp.fromDate(payload.date), locationId: payload.locationId });
-  };
-
-  const bulkAddOpeningStock = async (payload: OpeningStockPayload[]) => {
-      const batch = writeBatch(db);
-      const rate = Number(currentShopCurrency.rate) || 1;
-      payload.forEach(item => {
-          const ref = doc(collection(db, 'transactions'));
-          batch.set(ref, { shopId: item.shopId, productId: item.productId, type: TransactionType.OPENING_STOCK, description: item.notes, quantity: Number(item.quantity) || 0, amount: (Number(item.unitCost) || 0) / rate, date: Timestamp.fromDate(item.date), locationId: item.locationId });
-      });
-      await batch.commit();
-  };
+  const writeOffStock = async (p: any) => { await addDoc(collection(db, 'transactions'), { ...p, type: TransactionType.STOCK_WRITE_OFF, date: serverTimestamp(), amount: 0 }); };
+  const markAlertAsRead = async (id: string) => { await updateDoc(doc(db, 'alerts', id), { isRead: true }); };
+  const logAlert = async (a: any) => { await addDoc(collection(db, 'alerts'), { ...a, isRead: false, date: serverTimestamp() }); };
 
   const resetSystem = async () => {
-      console.log("[CORE] FACTORY_RESET: Initiating...");
-      const colls = ['shops', 'products', 'transactions', 'shipments', 'alerts', 'customers', 'warehouses', 'accounts', 'currencies', 'clearingAgents', 'freightForwarders', 'customExpenseTypes', 'expenseAccounts', 'assets', 'users'];
+      const colls = ['shops', 'products', 'transactions', 'shipments', 'alerts', 'customers', 'warehouses', 'accounts', 'currencies', 'users', 'importBatches'];
       for (const c of colls) {
-          try {
-              const q = await getDocs(collection(db, c));
-              const batch = writeBatch(db);
-              q.docs.forEach(d => batch.delete(d.ref));
-              await batch.commit();
-          } catch (e: any) {
-              console.error(`[CORE] FACTORY_RESET_ERR: Failed to clear [${c}]: ${e.message}`);
-          }
+          const snap = await getDocs(collection(db, c));
+          const batch = writeBatch(db);
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
       }
       window.location.reload();
   };
 
   const clearTransactions = async () => {
-      try {
-          const trans = await getDocs(collection(db, 'transactions'));
-          const ships = await getDocs(collection(db, 'shipments'));
-          const alts = await getDocs(collection(db, 'alerts'));
-          
-          for (const coll of [trans, ships, alts]) {
-              const batch = writeBatch(db);
-              coll.docs.forEach(d => batch.delete(d.ref));
-              await batch.commit();
-          }
-
-          const q4 = await getDocs(collection(db, 'accounts'));
-          const batchAcc = writeBatch(db);
-          q4.docs.forEach(d => batchAcc.update(d.ref, { openingBalance: 0 }));
-          await batchAcc.commit();
-      } catch (e) {
-          console.error(e);
-          throw e;
-      }
+      const snap = await getDocs(collection(db, 'transactions'));
+      const batch = writeBatch(db);
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
   };
 
-  const addUser = async (user: Omit<User, 'id'>) => { await addDoc(collection(db, 'users'), user); };
-  const updateUser = async (id: string, data: Partial<User>) => { await updateDoc(doc(db, 'users', id), data); };
+  const addUser = async (u: any) => { await addDoc(collection(db, 'users'), u); };
+  const updateUser = async (id: string, d: any) => { await updateDoc(doc(db, 'users', id), d); };
   const deleteUser = async (id: string) => { await deleteDoc(doc(db, 'users', id)); };
-  const addClearingAgent = async (agent: Omit<ClearingAgent, 'id'>) => { await addDoc(collection(db, 'clearingAgents'), agent); };
-  const addFreightForwarder = async (ff: Omit<FreightForwarder, 'id'>) => { await addDoc(collection(db, 'freightForwarders'), ff); };
-  const addCustomExpenseType = async (type: Omit<CustomExpenseType, 'id'>) => { await addDoc(collection(db, 'customExpenseTypes'), type); };
-  const addExpenseAccount = async (account: Omit<ExpenseAccount, 'id'>) => { await addDoc(collection(db, 'expenseAccounts'), account); };
 
   const value = {
     currentUser, role, shopId, shops, products, transactions, shipments, alerts, customers, warehouses,
-    shopAccounts, currencies, clearingAgents, freightForwarders, customExpenseTypes, expenseAccounts, assets,
-    currentShopCurrency, isDemoMode, connectionError, invoiceToEdit, setInvoiceToEdit, login, logout, switchShop, addShop, updateShop, deleteShop,
+    shopAccounts, currencies, clearingAgents: [], freightForwarders: [], customExpenseTypes: [], expenseAccounts, assets,
+    importBatches, currentShopCurrency, isDemoMode: false, connectionError: null, invoiceToEdit, setInvoiceToEdit, login, logout, switchShop, addShop, updateShop, deleteShop,
     addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, standardizeItemIds, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, updateSale, deleteInvoice, recordPayment,
     addExpense, addWarehouse, transferStock, addAsset, recordAdvance, receiveShipment, addExport, updateShipmentCosts,
-    recordPaymentVoucher, recordSalesReturn, addOpeningStock, bulkAddOpeningStock, markAlertAsRead, logAlert,
+    recordPaymentVoucher, recordSalesReturn, addOpeningStock, bulkAddOpeningStock, deleteImportBatch, purgeOpeningStock, deleteStockTransactions, writeOffStock, markAlertAsRead, logAlert,
     resetSystem, clearTransactions, getStockLevel, getAdvanceBalance, formatCurrency, users, addUser, updateUser,
-    deleteUser, addClearingAgent, addFreightForwarder, addCustomExpenseType, addExpenseAccount
+    deleteUser, addClearingAgent: async (a: any) => { await addDoc(collection(db, 'clearingAgents'), a); }, 
+    addFreightForwarder: async (f: any) => { await addDoc(collection(db, 'freightForwarders'), f); }, 
+    addCustomExpenseType: async (t: any) => { await addDoc(collection(db, 'customExpenseTypes'), t); }, 
+    addExpenseAccount: async (a: any) => { await addDoc(collection(db, 'expenseAccounts'), a); }
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
