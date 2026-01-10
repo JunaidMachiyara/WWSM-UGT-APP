@@ -43,6 +43,18 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
         setSearchTerm('');
     };
 
+    const handleInputKeyDown = (e: React.KeyboardEvent) => {
+        // Prevent "Enter" from submitting the parent form
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            // If there's exactly one match, select it
+            if (filteredOptions.length === 1) {
+                handleSelect(filteredOptions[0].id);
+            }
+        }
+    };
+
     return (
         <div className="relative" ref={wrapperRef}>
             <div 
@@ -66,6 +78,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({ options, value, onC
                             placeholder="Search..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={handleInputKeyDown}
                             onClick={(e) => e.stopPropagation()}
                             autoFocus
                         />

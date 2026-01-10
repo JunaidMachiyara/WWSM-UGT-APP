@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useAppContext } from '../../../context/AppContext';
-// Fix: Removed incorrect import of SaleItem from AppContext as it wasn't exported and was unused
 import { TransactionType, AccountType } from '../../../types';
 import { ShopView } from '../ShopDashboard';
 import SearchableSelect from '../../../components/SearchableSelect';
@@ -77,6 +76,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const [newCustomerPhone, setNewCustomerPhone] = useState('');
 
   const [showAddProductModal, setShowAddProductModal] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [newProductCategory, setNewProductCategory] = useState('');
   const [newProductHoCost, setNewProductHoCost] = useState<number | ''>(0);
@@ -90,6 +90,8 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   const [newBankName, setNewBankName] = useState('');
   const [newAccountNumber, setNewAccountNumber] = useState('');
   const [newOpeningBalance, setNewOpeningBalance] = useState<number | ''>(0);
+
+  const isAnyModalOpen = showAddCustomerModal || showAddProductModal || showAddAccountModal || showSuccessModal;
 
   const shopCustomers = useMemo(() => customers.filter(c => c.shopId === shopId), [customers, shopId]);
   const currentShopAccounts = shopAccounts.filter(acc => acc.shopId === shopId);
@@ -123,6 +125,9 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
     setManualRef('');
   };
 
+  // EFFECT: Load Invoice for Editing
+  // We removed the 'else' block that was calling resetForm() automatically.
+  // This prevents the form from wiping items when products/customers are added mid-invoice.
   useEffect(() => {
     if (invoiceToEdit && shopId) {
         setIsEditMode(true);
@@ -135,9 +140,10 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
         setInvoiceNumber(invoiceToEdit.id);
         setManualRef(invoiceToEdit.reference || '');
         
-        setCashPaid(cashTx ? cashTx.amount * currentShopCurrency.rate : 0);
+        const rate = currentShopCurrency.rate || 1;
+        setCashPaid(cashTx ? cashTx.amount * rate : 0);
         setPaymentAccountId(cashTx ? cashTx.paymentAccountId || '' : '');
-        setAdvanceApplied(advanceTx ? advanceTx.amount * currentShopCurrency.rate : 0);
+        setAdvanceApplied(advanceTx ? advanceTx.amount * rate : 0);
         
         const invoiceItems = invoiceToEdit.items.map(t => {
             const product = products.find(p => p.id === t.productId);
@@ -147,18 +153,15 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             return {
                 productId: t.productId!,
                 quantity: t.quantity || 0,
-                salePrice: t.amount * currentShopCurrency.rate,
+                salePrice: t.amount * rate,
                 locationId: t.locationId || shopId,
                 stock: stockBeforeThisSale,
-                minSalePrice: product ? product.minSalePrice * currentShopCurrency.rate : 0,
+                minSalePrice: product ? product.minSalePrice * rate : 0,
             };
         });
         setItems(invoiceItems);
-    } else {
-        setIsEditMode(false);
-        resetForm();
     }
-  }, [invoiceToEdit, shopId, products, getStockLevel, currentShopCurrency.rate]);
+  }, [invoiceToEdit, shopId]);
 
   useEffect(() => {
     setAdvanceApplied(0);
@@ -252,11 +255,18 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
   }
   
   const cancelEdit = () => {
-    setInvoiceToEdit(null); // This will trigger the useEffect to reset the form.
+    // Explicitly reset the form and state when cancelling an edit.
+    setInvoiceToEdit(null); 
+    setIsEditMode(false);
+    resetForm();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Safety check: Don't submit the invoice if the user is currently in a modal
+    if (isAnyModalOpen) return;
+
     const itemsWithProduct = items.filter(i => i.productId);
     if (itemsWithProduct.length === 0) {
         alert('Please add at least one item to the invoice by selecting a product.');
@@ -328,14 +338,15 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
         }
         
         setShowSuccessModal(true);
-        resetForm();
+        resetForm(); // Explicit reset after successful record
     } catch (err) {
         console.error(err);
         alert(`Failed to ${isEditMode ? 'update' : 'record'} sale. Please try again.`);
     }
   };
 
-  const handleQuickAddCustomer = async () => {
+  const handleQuickAddCustomer = async (e: React.MouseEvent) => {
+      e.preventDefault();
       if (!newCustomerName.trim()) {
           alert('Customer name is required.');
           return;
@@ -357,15 +368,21 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
       }
   };
 
-  const handleQuickAddProduct = async () => {
-      if (!newProductName.trim() || !newProductCategory.trim() || Number(newProductHoCost) <= 0 || Number(newProductMinSalePrice) <= 0) {
-          alert('Please fill all product fields correctly. Costs and prices must be greater than zero.');
+  const handleQuickAddProduct = async (e: React.MouseEvent) => {
+      e.preventDefault();
+      const cleanName = newProductName.trim();
+      const cleanCategory = newProductCategory.trim() || 'General';
+
+      if (!cleanName || Number(newProductHoCost) <= 0 || Number(newProductMinSalePrice) <= 0) {
+          alert('Please provide a name, and ensure costs and prices are greater than zero.');
           return;
       }
+
+      setIsSavingProduct(true);
       try {
           await addProduct({
-              name: newProductName,
-              category: newProductCategory,
+              name: cleanName,
+              category: cleanCategory,
               hoCost: Number(newProductHoCost),
               minSalePrice: Number(newProductMinSalePrice),
               weight: Number(newProductWeight) || 0
@@ -379,13 +396,13 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
       } catch (error) {
           console.error(error);
           alert('Failed to add product.');
+      } finally {
+          setIsSavingProduct(false);
       }
   };
 
   const handleQuickAddAccount = async (e: React.MouseEvent) => {
     e.preventDefault();
-    console.log('Sales: handleQuickAddAccount triggered');
-
     if (!newAccountName.trim() || !shopId) {
         alert('Account name is required.');
         return;
@@ -397,7 +414,6 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
 
     setIsSavingAccount(true);
     try {
-        console.log('Sales: Attempting to save account via AppContext...', { newAccountName, newAccountType, shopId });
         await addShopAccount({
             shopId,
             accountName: newAccountName,
@@ -406,8 +422,6 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             accountNumber: newAccountType === AccountType.BANK ? newAccountNumber : undefined,
             openingBalance: Number(newOpeningBalance) || 0,
         });
-        
-        console.log('Sales: Account saved successfully.');
         setNewAccountName('');
         setNewAccountType(AccountType.CASH);
         setNewBankName('');
@@ -617,12 +631,14 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                 
                 <div className="space-y-3">
                     <button 
+                        type="button"
                         onClick={() => setShowSuccessModal(false)}
                         className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-primary-dark transition-all shadow-lg active:scale-95"
                     >
                         {isEditMode ? 'Go to History' : 'Record Another'}
                     </button>
                     <button 
+                        type="button"
                         onClick={() => onNavigate?.('dashboard')}
                         className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-bold hover:bg-gray-200 transition-all active:scale-95"
                     >
@@ -639,7 +655,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md transform transition-all animate-scale-up">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                     <h3 className="text-lg font-bold text-gray-800">Create New Customer</h3>
-                    <button onClick={() => setShowAddCustomerModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                    <button type="button" onClick={() => setShowAddCustomerModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
                 </div>
                 <div className="space-y-4">
                     <div>
@@ -665,12 +681,14 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                     </div>
                     <div className="flex justify-end space-x-3 mt-6">
                         <button 
+                            type="button"
                             onClick={() => setShowAddCustomerModal(false)} 
                             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
                         >
                             Cancel
                         </button>
                         <button 
+                            type="button"
                             onClick={handleQuickAddCustomer} 
                             className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
                         >
@@ -688,7 +706,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-lg transform transition-all overflow-y-auto max-h-screen animate-scale-up">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                     <h3 className="text-lg font-bold text-gray-800">Create New Product</h3>
-                    <button onClick={() => setShowAddProductModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                    <button type="button" onClick={() => !isSavingProduct && setShowAddProductModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
                 </div>
                 <div className="space-y-4">
                     <div>
@@ -699,6 +717,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                             onChange={e => setNewProductName(e.target.value)} 
                             className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
                             autoFocus 
+                            disabled={isSavingProduct}
                             placeholder="e.g. Laptop Charger"
                         />
                     </div>
@@ -709,6 +728,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                             value={newProductCategory} 
                             onChange={e => setNewProductCategory(e.target.value)} 
                             className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
+                            disabled={isSavingProduct}
                             placeholder="e.g. Electronics"
                         />
                     </div>
@@ -721,6 +741,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                                 onChange={e => setNewProductHoCost(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                                 className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                                 min="0" step="0.01"
+                                disabled={isSavingProduct}
                             />
                         </div>
                         <div>
@@ -731,6 +752,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                                 onChange={e => setNewProductMinSalePrice(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                                 className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                                 min="0" step="0.01"
+                                disabled={isSavingProduct}
                             />
                         </div>
                     </div>
@@ -742,21 +764,34 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                             onChange={e => setNewProductWeight(e.target.value === '' ? '' : parseFloat(e.target.value))} 
                             className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary"
                             min="0" step="0.01"
+                            disabled={isSavingProduct}
                         />
                     </div>
                     <p className="text-xs text-gray-500 italic">Note: Head Office Cost and Min Sale Price are set in USD Base Currency.</p>
                     <div className="flex justify-end space-x-3 mt-6">
                         <button 
+                            type="button"
                             onClick={() => setShowAddProductModal(false)} 
+                            disabled={isSavingProduct}
                             className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 font-medium"
                         >
                             Cancel
                         </button>
                         <button 
+                            type="button"
                             onClick={handleQuickAddProduct} 
-                            className="px-4 py-2 text-white bg-primary rounded-lg hover:bg-primary-dark font-bold shadow-md"
+                            disabled={isSavingProduct}
+                            className={`px-4 py-2 text-white bg-primary rounded-lg font-bold shadow-md flex items-center ${isSavingProduct ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary-dark'}`}
                         >
-                            Save Product
+                            {isSavingProduct ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Saving...
+                                </>
+                            ) : 'Save Product'}
                         </button>
                     </div>
                 </div>
@@ -770,7 +805,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
             <div className="bg-white p-6 rounded-lg shadow-xl w-full max-w-md transform transition-all animate-scale-up">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
                     <h3 className="text-lg font-bold text-gray-800">Create New Account</h3>
-                    <button onClick={() => !isSavingAccount && setShowAddAccountModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+                    <button type="button" onClick={() => !isSavingAccount && setShowAddAccountModal(false)} className="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
                 </div>
                 <div className="space-y-4">
                     <div>
@@ -805,7 +840,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                                     type="text" 
                                     value={newBankName} 
                                     onChange={e => setNewBankName(e.target.value)} 
-                                    className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
+                                    className="mt-1 w-full border border-gray-300 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
                                     disabled={isSavingAccount}
                                     placeholder="e.g. Bank of Africa"
                                 />
@@ -816,7 +851,7 @@ const Sales: React.FC<SalesProps> = ({ onNavigate }) => {
                                     type="text" 
                                     value={newAccountNumber} 
                                     onChange={e => setNewAccountNumber(e.target.value)} 
-                                    className="mt-1 w-full border border-gray-300 p-2 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
+                                    className="mt-1 w-full border border-gray-300 rounded-md shadow-sm bg-white text-gray-900 focus:ring-primary focus:border-primary" 
                                     disabled={isSavingAccount}
                                     placeholder="Account Number"
                                 />

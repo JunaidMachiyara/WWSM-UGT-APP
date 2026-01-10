@@ -39,6 +39,7 @@ import {
   Asset, 
   AssetStatus,
   InvoiceSummary,
+  // Removed non-existent InvoiceItem import to fix compilation error
   ImportBatch,
   AccountType
 } from '../types';
@@ -321,11 +322,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const addProduct = async (productData: Omit<Product, 'id'>) => { 
-      const itemsWithNewId = products.filter(p => p.id.startsWith('ITEM-'));
+      const itemsWithNewId = products.filter(p => p.id && p.id.startsWith('ITEM-'));
       let nextSeq = 1001;
       if (itemsWithNewId.length > 0) {
-          const maxId = Math.max(...itemsWithNewId.map(p => parseInt(p.id.split('-')[1]) || 0));
-          nextSeq = maxId + 1;
+          const ids = itemsWithNewId.map(p => {
+              const parts = p.id.split('-');
+              return parts.length > 1 ? parseInt(parts[1]) : 0;
+          }).filter(n => !isNaN(n));
+          
+          if (ids.length > 0) {
+              nextSeq = Math.max(...ids) + 1;
+          }
       }
       await setDoc(doc(db, 'products', `ITEM-${nextSeq}`), productData); 
   };
@@ -362,7 +369,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const bulkSyncProducts = async (productsData: any[]): Promise<Map<string, string>> => {
     const processedNameToIdMap = new Map<string, string>(); 
     let currentMax = 1000;
-    products.filter(p => p.id.startsWith('ITEM-')).forEach(p => {
+    products.filter(p => p.id && p.id.startsWith('ITEM-')).forEach(p => {
         const seq = parseInt(p.id.split('-')[1]) || 0;
         if (seq > currentMax) currentMax = seq;
     });
@@ -527,17 +534,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (!shopId) return;
       const CHUNK_SIZE = 450;
       for (const item of items) {
-          // Use a simpler query (shop + product) and filter locally to avoid indexing hangs
           const q = query(
               collection(db, 'transactions'), 
               where('shopId', '==', shopId),
               where('productId', '==', item.productId)
           );
           const snap = await getDocs(q);
-          // Filter locally to find matches for location
           const matches = snap.docs.filter(d => {
               const data = d.data();
-              const loc = data.locationId || data.shopId; // normalize
+              const loc = data.locationId || data.shopId; 
               return loc === item.locationId;
           });
 
@@ -578,7 +583,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const value = {
     currentUser, role, shopId, shops, products, transactions, shipments, alerts, customers, warehouses,
-    shopAccounts, currencies, clearingAgents: [], freightForwarders: [], customExpenseTypes: [], expenseAccounts, assets,
+    shopAccounts, currencies, 
+    // Fixed: Using state variables instead of hardcoded empty arrays
+    clearingAgents, freightForwarders, customExpenseTypes,
+    expenseAccounts, assets,
     importBatches, currentShopCurrency, isDemoMode: false, connectionError: null, invoiceToEdit, setInvoiceToEdit, login, logout, switchShop, addShop, updateShop, deleteShop,
     addCustomer, updateCustomer, deleteCustomer, updateSupplierOpeningBalance, bulkAddCustomers, addProduct, standardizeItemIds, bulkSyncProducts, addShopAccount, updateShopAccount, updateCurrency, addCurrency, recordSale, updateSale, deleteInvoice, recordPayment,
     addExpense, addWarehouse, transferStock, addAsset, recordAdvance, receiveShipment, addExport, updateShipmentCosts,
