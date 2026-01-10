@@ -22,6 +22,7 @@ interface ShopStats {
     expenses7d: number;
     currencySymbol: string;
     currencyRate: number;
+    currencyId: string;
 }
 
 interface ShopSummaryCardProps {
@@ -32,8 +33,12 @@ interface ShopSummaryCardProps {
 
 const ShopSummaryCard: React.FC<ShopSummaryCardProps> = ({ stats, onClick, onDetailClick }) => {
     const { formatCurrency } = useAppContext();
+    const [viewMode, setViewMode] = useState<'LOCAL' | 'USD'>(stats.currencyId === 'USD' ? 'USD' : 'LOCAL');
 
-    const formatLocalCurrency = (amountInBase: number) => {
+    const formatDisplay = (amountInBase: number) => {
+        if (viewMode === 'USD') {
+            return `$${amountInBase.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        }
         const amount = amountInBase * (stats.currencyRate || 1);
         return `${stats.currencySymbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     };
@@ -57,14 +62,32 @@ const ShopSummaryCard: React.FC<ShopSummaryCardProps> = ({ stats, onClick, onDet
 
     return (
         <div className="bg-white rounded-2xl shadow-lg border border-gray-100 flex flex-col hover:shadow-xl hover:border-primary/20 transition-all duration-300 transform hover:-translate-y-1">
-            <div className="p-4 border-b-2 border-gray-100">
-                <h3 className="text-lg font-black text-primary uppercase tracking-tighter italic">{stats.name}</h3>
-                <p className="text-xs font-medium text-gray-400">{stats.location}</p>
+            <div className="p-4 border-b-2 border-gray-100 flex justify-between items-start">
+                <div>
+                    <h3 className="text-lg font-black text-primary uppercase tracking-tighter italic">{stats.name}</h3>
+                    <p className="text-xs font-medium text-gray-400">{stats.location}</p>
+                </div>
+                {stats.currencyId !== 'USD' && (
+                    <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200">
+                        <button 
+                            onClick={() => setViewMode('LOCAL')}
+                            className={`px-1.5 py-0.5 text-[9px] font-black rounded-md transition-all ${viewMode === 'LOCAL' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                            {stats.currencyId}
+                        </button>
+                        <button 
+                            onClick={() => setViewMode('USD')}
+                            className={`px-1.5 py-0.5 text-[9px] font-black rounded-md transition-all ${viewMode === 'USD' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                        >
+                            USD
+                        </button>
+                    </div>
+                )}
             </div>
             <div className="p-4 space-y-0.5 flex-1">
                 <StatItem 
                     label="Cash in Hand" 
-                    value={formatLocalCurrency(stats.cashInHand)} 
+                    value={formatDisplay(stats.cashInHand)} 
                     className="text-green-600" 
                     clickable 
                     onClickAction={() => onDetailClick('CASH')}
@@ -78,28 +101,28 @@ const ShopSummaryCard: React.FC<ShopSummaryCardProps> = ({ stats, onClick, onDet
                 />
                 <StatItem 
                     label="Inventory Worth" 
-                    value={formatLocalCurrency(stats.inventoryWorth)} 
+                    value={formatDisplay(stats.inventoryWorth)} 
                     className="text-gray-900" 
                     clickable 
                     onClickAction={() => onDetailClick('INVENTORY')}
                 />
                 <StatItem 
                     label="Receivables" 
-                    value={formatLocalCurrency(stats.receivables)} 
+                    value={formatDisplay(stats.receivables)} 
                     className="text-orange-600" 
                     clickable
                     onClickAction={() => onDetailClick('RECEIVABLES')}
                 />
                 <StatItem 
                     label="Payables (to HO)" 
-                    value={formatCurrency(stats.payables)} 
+                    value={formatDisplay(stats.payables)} 
                     className="text-red-600" 
                     clickable
                     onClickAction={() => onDetailClick('PAYABLES')}
                 />
                 <StatItem 
                     label="Expenses (Month)" 
-                    value={formatLocalCurrency(stats.monthExpenses)} 
+                    value={formatDisplay(stats.monthExpenses)} 
                     className="text-red-500" 
                     clickable
                     onClickAction={() => onDetailClick('MONTH_EXP')}
@@ -111,21 +134,21 @@ const ShopSummaryCard: React.FC<ShopSummaryCardProps> = ({ stats, onClick, onDet
                 
                 <StatItem 
                     label="Sales" 
-                    value={formatLocalCurrency(stats.sales7d)} 
+                    value={formatDisplay(stats.sales7d)} 
                     className="text-blue-600" 
                     clickable
                     onClickAction={() => onDetailClick('SALES_7D')}
                 />
                 <StatItem 
                     label="Receipts" 
-                    value={formatLocalCurrency(stats.receipts7d)} 
+                    value={formatDisplay(stats.receipts7d)} 
                     className="text-green-500" 
                     clickable
                     onClickAction={() => onDetailClick('RECEIPTS_7D')}
                 />
                 <StatItem 
                     label="Expenses" 
-                    value={formatLocalCurrency(stats.expenses7d)} 
+                    value={formatDisplay(stats.expenses7d)} 
                     className="text-red-500" 
                     clickable
                     onClickAction={() => onDetailClick('EXP_7D')}
@@ -265,6 +288,7 @@ const Dashboard: React.FC = () => {
             expenses7d,
             currencySymbol: currency.symbol,
             currencyRate: currency.rate,
+            currencyId: currency.id,
         };
     }).sort((a,b) => a.name.localeCompare(b.name));
   }, [shops, transactions, products, shopAccounts, currencies]);

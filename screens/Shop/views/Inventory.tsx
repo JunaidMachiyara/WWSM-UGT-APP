@@ -12,6 +12,7 @@ interface InventoryItem {
     stock: number;
     unitCost: number; // Stored in Base Currency (USD)
     totalValue: number; // Stored in Base Currency (USD)
+    totalWeight: number; // Sum of stock * product weight
     totalRetailValue: number; // Stored in Base Currency (USD)
     totalReceived: number;
     totalSold: number;
@@ -110,7 +111,9 @@ const Inventory: React.FC = () => {
              levels.push({
                 productId: product.id, productName: product.name, category: product.category,
                 locationId: location.id, locationName: location.name, stock: stock,
-                unitCost: avgCost, totalValue: stock * avgCost, totalRetailValue: stock * product.minSalePrice,
+                unitCost: avgCost, totalValue: stock * avgCost, 
+                totalWeight: stock * (product.weight || 0),
+                totalRetailValue: stock * product.minSalePrice,
                 totalReceived: activity.received, totalSold: activity.sold,
             });
         }
@@ -172,6 +175,15 @@ const Inventory: React.FC = () => {
     }
   };
 
+  // KPI Calculations for Top Cards
+  const kpis = useMemo(() => {
+      return {
+          totalBales: filteredInventory.reduce((s, i) => s + i.stock, 0),
+          totalKg: filteredInventory.reduce((s, i) => s + i.totalWeight, 0),
+          totalWorth: filteredInventory.reduce((s, i) => s + i.totalValue, 0),
+      };
+  }, [filteredInventory]);
+
   return (
     <div className="space-y-8">
       <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-100 relative">
@@ -194,48 +206,66 @@ const Inventory: React.FC = () => {
             </div>
         )}
 
-        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-4">
-            <h3 className="text-xl font-bold text-gray-800 border-b-4 border-primary/20 pb-1">Real-Time Inventory Status</h3>
-            
-            <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto">
-                {/* Currency Toggle */}
-                {isMultiCurrency && (
-                    <div className="bg-gray-100 p-1 rounded-xl flex items-center shadow-inner border border-gray-200">
-                        <button 
-                            onClick={() => setDisplayCurrency('LOCAL')}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${displayCurrency === 'LOCAL' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-6 gap-6">
+            <div className="w-full lg:w-1/4">
+                <h3 className="text-xl font-bold text-gray-800 border-b-4 border-primary/20 pb-1 mb-4">Inventory Manifest</h3>
+                
+                {/* Filters Stack */}
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Filter Location</label>
+                        <select 
+                            value={selectedLocationId} 
+                            onChange={(e) => setSelectedLocationId(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm font-bold text-gray-900"
                         >
-                            {currentShopCurrency.id}
-                        </button>
-                        <button 
-                            onClick={() => setDisplayCurrency('USD')}
-                            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${displayCurrency === 'USD' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                        >
-                            USD (Base)
-                        </button>
+                            <option value="all">All Locations</option>
+                            {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                        </select>
                     </div>
-                )}
-
-                <div className="flex-1 min-w-[200px]">
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Filter Location</label>
-                    <select 
-                        value={selectedLocationId} 
-                        onChange={(e) => setSelectedLocationId(e.target.value)}
-                        className="w-full border border-gray-300 rounded-md p-2 bg-white text-sm font-bold text-gray-900"
-                    >
-                        <option value="all">All Locations</option>
-                        {locations.map(loc => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
-                    </select>
+                    <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Search Products</label>
+                        <input 
+                            type="text" 
+                            placeholder="Name..." 
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white text-gray-900"
+                        />
+                    </div>
+                    
+                    {isMultiCurrency && (
+                        <div className="bg-gray-100 p-1 rounded-xl flex items-center shadow-inner border border-gray-200">
+                            <button 
+                                onClick={() => setDisplayCurrency('LOCAL')}
+                                className={`flex-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${displayCurrency === 'LOCAL' ? 'bg-white text-primary shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                {currentShopCurrency.id}
+                            </button>
+                            <button 
+                                onClick={() => setDisplayCurrency('USD')}
+                                className={`flex-1 px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${displayCurrency === 'USD' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+                            >
+                                USD (Base)
+                            </button>
+                        </div>
+                    )}
                 </div>
-                <div className="flex-1 min-w-[200px]">
-                    <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Search Products</label>
-                    <input 
-                        type="text" 
-                        placeholder="Name..." 
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full border border-gray-300 rounded-md p-2 text-sm bg-white text-gray-900"
-                    />
+            </div>
+
+            {/* KPI Cards beside Filters */}
+            <div className="w-full lg:w-3/4 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-gradient-to-br from-blue-600 to-primary p-5 rounded-2xl text-white shadow-lg border border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Total Sum of Bales</p>
+                    <p className="text-3xl font-black">{kpis.totalBales.toLocaleString()} <span className="text-xs uppercase opacity-60">Units</span></p>
+                </div>
+                <div className="bg-gradient-to-br from-emerald-500 to-green-600 p-5 rounded-2xl text-white shadow-lg border border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Total Sum of Kg</p>
+                    <p className="text-3xl font-black">{kpis.totalKg.toLocaleString(undefined, { maximumFractionDigits: 1 })} <span className="text-xs uppercase opacity-60">kg</span></p>
+                </div>
+                <div className="bg-gradient-to-br from-indigo-500 to-indigo-700 p-5 rounded-2xl text-white shadow-lg border border-white/10">
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] opacity-80 mb-2">Total Sum of Worth</p>
+                    <p className="text-3xl font-black">{formatValue(kpis.totalWorth)}</p>
                 </div>
             </div>
         </div>
@@ -255,6 +285,7 @@ const Inventory: React.FC = () => {
                 <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Product / Category</th>
                 <th className="px-6 py-4 text-left text-[10px] font-black text-gray-400 uppercase tracking-widest">Stored In</th>
                 <th className="px-6 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Stock Level</th>
+                <th className="px-6 py-4 text-center text-[10px] font-black text-gray-400 uppercase tracking-widest">Weight (Kg)</th>
                 <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Avg Cost/Unit ({displayCurrency === 'USD' ? 'USD' : currentShopCurrency.id})</th>
                 <th className="px-6 py-4 text-right text-[10px] font-black text-gray-400 uppercase tracking-widest">Inventory Value ({displayCurrency === 'USD' ? 'USD' : currentShopCurrency.id})</th>
               </tr>
@@ -282,13 +313,16 @@ const Inventory: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                          <span className="text-sm font-black text-primary bg-blue-50 px-3 py-1 rounded-full">{item.stock.toLocaleString()} units</span>
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-center text-xs font-bold text-gray-600">
+                        {item.totalWeight.toLocaleString(undefined, { maximumFractionDigits: 1 })} kg
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500 font-medium">{formatValue(item.unitCost)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-black text-gray-900 bg-gray-50/50">{formatValue(item.totalValue)}</td>
                   </tr>
                 );
               }) : (
                 <tr>
-                  <td colSpan={6} className="text-center py-20 text-gray-400 italic font-medium">
+                  <td colSpan={7} className="text-center py-20 text-gray-400 italic font-medium">
                       No stock records found matching your filters.
                   </td>
                 </tr>
@@ -297,18 +331,14 @@ const Inventory: React.FC = () => {
           </table>
         </div>
         
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl shadow-sm">
-                <p className="text-[10px] font-black text-blue-700 uppercase tracking-widest">Total Items Found</p>
-                <p className="text-2xl font-black text-blue-900">{filteredInventory.reduce((s, i) => s + i.stock, 0).toLocaleString()} <span className="text-xs">Units</span></p>
-            </div>
+        <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-green-50 border border-green-100 rounded-xl shadow-sm">
                 <p className="text-[10px] font-black text-green-700 uppercase tracking-widest">Total Retail Value ({displayCurrency === 'USD' ? 'USD' : currentShopCurrency.id})</p>
                 <p className="text-2xl font-black text-green-900">{formatValue(filteredInventory.reduce((s, i) => s + i.totalRetailValue, 0))}</p>
             </div>
-            <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm">
-                <p className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Consolidated Cost Value ({displayCurrency === 'USD' ? 'USD' : currentShopCurrency.id})</p>
-                <p className="text-2xl font-black text-indigo-900">{formatValue(filteredInventory.reduce((s, i) => s + i.totalValue, 0))}</p>
+            <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl shadow-sm text-right">
+                <p className="text-[10px] font-black text-indigo-700 uppercase tracking-widest">Consolidated Ledger Count</p>
+                <p className="text-2xl font-black text-indigo-900">{filteredInventory.length} <span className="text-xs uppercase opacity-60">Record Lines</span></p>
             </div>
         </div>
       </div>
